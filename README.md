@@ -1,5 +1,10 @@
 # AgentKS — Agentic RAG Knowledge Stack
 
+> **⚠️ DEVELOPMENT STATUS**  
+> This system is currently under active development and bug fixes.  
+> This is a **DRAFT VERSION** - features, APIs, and configurations may change without notice.  
+> Not recommended for production use at this time.
+
 AgentKS is a production-ready agentic RAG (Retrieval-Augmented Generation) knowledge stack orchestrated with Docker Compose, featuring LangGraph-based multi-skill agent execution, MCP (Model Context Protocol) services, and enterprise authentication.
 
 ## 🎯 Key Features
@@ -17,18 +22,18 @@ AgentKS is a production-ready agentic RAG (Retrieval-Augmented Generation) knowl
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    CADDY (Reverse Proxy)                     │
-│              80/443 - TLS + Forward Auth                     │
-└────┬─────────────────┬────────────────┬────────────────────┘
-     │                 │                │
-     │ /webui          │ /admin         │ /web
-     ↓                 ↓                ↓
-┌──────────┐    ┌──────────┐    ┌──────────┐
-│OpenWebUI │    │Admin UI  │    │Web API   │
-│  :8080   │    │  :8000   │    │  :8000   │
-└────┬─────┘    └────┬─────┘    └────┬─────┘
-     │               │               │
-     │        ┌──────┴───────────────┘
+│                    CADDY (Reverse Proxy)                    │
+│              80/443 - TLS + Forward Auth                    │
+└────┬─────────────────┬────────────────--────────────────────┘
+     │                 │                
+     │ /webui          │ /admin
+     ↓                 ↓
+┌──────────┐    ┌──────────┐
+│OpenWebUI │    │Admin UI  │
+│  :8080   │    │  :8000   │
+└────┬─────┘    └────┬─────┘
+     │               │               
+     │        ┌──────┴
      │        │
      │   ┌────▼────────────────────────────────┐
      │   │   Agent Backend (:4000)             │
@@ -48,6 +53,12 @@ AgentKS is a production-ready agentic RAG (Retrieval-Augmented Generation) knowl
      │    │Search    │      │  - INSPIRE     │
      │    └──────────┘      │  - SearXNG     │
      │                      └────────────────┘
+     │                      ┌────────────────┐
+     │                      │ Hyperparam MCP │
+     │                      │   :5001        │
+     │                      │  - RAG-based   │
+     │                      │  - Optimization│
+     │                      └────────────────┘
      │
      │    ┌─────────────┐   ┌──────────┐   ┌──────────┐
      └────│ Authentik   │   │ Postgres │   │  Ollama  │
@@ -59,20 +70,24 @@ AgentKS is a production-ready agentic RAG (Retrieval-Augmented Generation) knowl
 
 ```
 AgentKS/
-├── docs/                       # Documentation
-│   ├── AGENT_FLOW.md          # Multi-skill agent architecture
-│   └── STRUCTURE.md           # Complete structure diagram
+├── docs/                       # Documentation (see docs/INDEX.md)
+│   ├── INDEX.md               # Documentation index
+│   ├── architecture/          # Architecture documentation
+│   ├── services/              # Service-specific docs
+│   ├── guides/                # How-to guides
+│   └── api/                   # API references
 │
 ├── backend/                    # Backend services
 │   ├── backend_app/           # Main application
-│   │   ├── app/               # Agent backend (:4000)
-│   │   ├── web/               # Admin UI (:8000)
+│   │   ├── agents/            # Agent backend (:4000)
+│   │   ├── admin/             # Admin UI (:8000)
 │   │   ├── rag/               # RAG services (:4001, :4002)
 │   │   ├── tools/             # MCP tool integration
 │   │   ├── migrations/        # Alembic DB migrations
 │   │   └── supervisord.conf   # Multi-service orchestration
 │   │
-│   ├── basic_tools_mcp_service/  # Search tools MCP (:5000)
+│   ├── basic_tools_mcp_service/      # Search tools MCP (:5000)
+│   ├── hyperparam_advisor_mcp_service/ # Hyperparameter optimization MCP (:5001)
 │   └── searxng/               # SearXNG configuration
 │
 ├── docker-compose.yml         # Full stack orchestration
@@ -81,7 +96,7 @@ AgentKS/
 └── README.md                  # This file
 ```
 
-**See [`docs/STRUCTURE.md`](docs/STRUCTURE.md) for complete directory tree**
+**See [`docs/INDEX.md`](docs/INDEX.md) for complete documentation index and [`docs/architecture/STRUCTURE.md`](docs/architecture/STRUCTURE.md) for directory tree**
 
 ## 🚀 Quick Start
 
@@ -114,7 +129,9 @@ docker compose logs -f
 ### Access Services
 
 - **OpenWebUI**: http://localhost/webui (Chat interface, authenticated via Authentik)
+- **Agent API**: http://localhost/api (OpenAI-compatible API, used by OpenWebUI)
 - **Admin Dashboard**: http://localhost/admin (System management, requires admin group)
+- **Hyperparameter Advisor**: http://localhost/hyperparam (AI-powered optimization suggestions)
 - **Authentik**: http://localhost:9000 (Authentication admin)
 
 **Authentication Flow:**
@@ -123,6 +140,7 @@ docker compose logs -f
 3. Authentik validates session and injects identity headers
 4. OpenWebUI trusts `X-Authentik-Email`, `X-Authentik-Name`, `X-Authentik-Groups` headers
 5. Users are automatically logged into OpenWebUI with their Authentik identity
+6. OpenWebUI calls the Agent API at `/api/v1/*` for chat completions
 
 ### Backend-Only Development
 
@@ -176,7 +194,7 @@ The LangGraph-based agent supports 5 execution patterns:
    Flow:  analyze → direct → answer
    ```
 
-**See [`docs/AGENT_FLOW.md`](docs/AGENT_FLOW.md) for detailed architecture**
+**See [`docs/architecture/AGENT_FLOW.md`](docs/architecture/AGENT_FLOW.md) for detailed architecture**
 
 ### Available Tools (via MCP)
 
@@ -186,20 +204,21 @@ The LangGraph-based agent supports 5 execution patterns:
 - **SearXNG** - Meta search engine (web)
 - **Calculator** - Math expression evaluation
 - **RAG Search** - Internal knowledge base
+- **Hyperparameter Advisor** - ML hyperparameter optimization suggestions based on historical results
 
 Tools are auto-discovered and dynamically bound to the LLM based on semantic relevance.
 
 ## 🔌 API Endpoints
 
-### Agent Backend (port 4000)
+### Agent Backend (port 4000, exposed as /api)
 
-**OpenAI-Compatible:**
+**OpenAI-Compatible API** (used by OpenWebUI):
 ```bash
 # List models
-GET /v1/models
+GET /api/v1/models
 
 # Chat completions (streaming/non-streaming)
-POST /v1/chat/completions
+POST /api/v1/chat/completions
 {
   "model": "rag-agent",
   "messages": [{"role": "user", "content": "Hello!"}],
@@ -207,21 +226,18 @@ POST /v1/chat/completions
 }
 ```
 
-**RAG Skill:**
+**Skills API** (internal use):
 ```bash
-# Run RAG with LLM generation
+# RAG Skill - Run RAG with LLM generation
 POST /api/rag-skill/run
 
-# Retrieve documents only (no LLM)
+# RAG Skill - Retrieve documents only (no LLM)
 POST /api/rag-skill/retrieve
-```
 
-**Tools Skill:**
-```bash
-# Run tools with dynamic discovery
+# Tools Skill - Run tools with dynamic discovery
 POST /api/tools-skill/run
 
-# Discover tools without execution
+# Tools Skill - Discover tools without execution
 POST /api/tools-skill/discover
 ```
 
@@ -241,6 +257,31 @@ POST /rag/upload
 # List documents
 # Client: GET /rag/documents -> Backend: GET /documents
 GET /rag/documents
+```
+
+### Hyperparameter Advisor (port 4003, exposed as /hyperparam)
+
+```bash
+# Inject optimization results
+POST /hyperparam/inject
+{
+  "experiment_id": "cnn_opt_v1",
+  "results": [
+    {
+      "hyperparameters": {"lr": 0.001, "batch_size": 32},
+      "result": 0.92,
+      "result_type": "maximize"
+    }
+  ]
+}
+
+# Get suggestions
+POST /hyperparam/suggest
+{
+  "target_params": ["lr", "batch_size", "dropout"],
+  "result_type": "maximize",
+  "n_suggestions": 3
+}
 ```
 
 ### Admin UI (port 8000)
@@ -349,8 +390,8 @@ pip install -r requirements.txt
 alembic upgrade head
 
 # Run services individually
-uvicorn app.main:app --reload --port 4000
-uvicorn web.main:app --reload --port 8000
+uvicorn agents.main:app --reload --port 4000
+uvicorn admin.main:app --reload --port 8000
 python rag/rag_mcp/main.py
 python tools/watcher.py
 ```
@@ -392,15 +433,17 @@ curl -X POST http://localhost:4000/v1/chat/completions \
 ## 📚 Documentation
 
 - **[`README.md`](README.md)** - This file: Project overview and quick start
-- **[`docs/STRUCTURE.md`](docs/STRUCTURE.md)** - Complete repository structure and architecture
-- **[`docs/AGENT_FLOW.md`](docs/AGENT_FLOW.md)** - Multi-skill agent execution patterns
-- **[`docs/OPENWEBUI_AUTHENTIK.md`](docs/OPENWEBUI_AUTHENTIK.md)** - OpenWebUI Authentik integration guide
-- **[`docs/CADDY_ROUTING.md`](docs/CADDY_ROUTING.md)** - Caddy routing and path rewriting guide
-- **[`backend/backend_app/README.md`](backend/backend_app/README.md)** - Backend services guide
-- **[`backend/backend_app/LLM_MANAGEMENT.md`](backend/backend_app/LLM_MANAGEMENT.md)** - LLM configuration
-- **[`backend/backend_app/app/RAG_SKILL_GUIDE.md`](backend/backend_app/app/RAG_SKILL_GUIDE.md)** - RAG skill usage
-- **[`backend/backend_app/app/TOOLS_SKILL_GUIDE.md`](backend/backend_app/app/TOOLS_SKILL_GUIDE.md)** - Tools skill usage
-- **[`backend/backend_app/tools/MCP_WATCHER_*.md`](backend/backend_app/tools/)** - MCP watcher documentation
+- **[`docs/INDEX.md`](docs/INDEX.md)** - Complete documentation index
+- **[`docs/architecture/STRUCTURE.md`](docs/architecture/STRUCTURE.md)** - Repository structure and architecture
+- **[`docs/architecture/AGENT_FLOW.md`](docs/architecture/AGENT_FLOW.md)** - Multi-skill agent execution patterns
+- **[`docs/architecture/OPENWEBUI_AUTHENTIK.md`](docs/architecture/OPENWEBUI_AUTHENTIK.md)** - OpenWebUI Authentik integration
+- **[`docs/architecture/CADDY_ROUTING.md`](docs/architecture/CADDY_ROUTING.md)** - Caddy routing and path rewriting
+- **[`docs/services/backend_app.md`](docs/services/backend_app.md)** - Backend services guide
+- **[`docs/guides/llm_management.md`](docs/guides/llm_management.md)** - LLM configuration
+- **[`docs/services/agents/rag_skill.md`](docs/services/agents/rag_skill.md)** - RAG skill usage
+- **[`docs/services/agents/tools_skill.md`](docs/services/agents/tools_skill.md)** - Tools skill usage
+- **[`docs/services/tools/mcp_watcher_*.md`](docs/services/tools/)** - MCP watcher documentation
+- **[`docs/services/mcp_services/hyperparam_advisor.md`](docs/services/mcp_services/hyperparam_advisor.md)** - Hyperparameter optimization tool
 
 ## 🔐 Authentication Flow
 
@@ -559,6 +602,7 @@ docker compose exec backend supervisorctl status
 | `openwebui` | N/A (image) | 8080 | Chat interface (uses Authentik + PostgreSQL) |
 | `backend` | `backend/backend_app/` | 8000, 4000, 4001, 4002 | Multi-service backend |
 | `basic_tools_mcp_service` | `backend/basic_tools_mcp_service/` | 5000 | Search tools MCP |
+| `hyperparam_advisor_mcp_service` | `backend/hyperparam_advisor_mcp_service/` | 5001 | Hyperparameter optimization MCP |
 | `ollama` | N/A (image) | 11434 | LLM inference |
 | `searxng` | N/A (image) | 8081 | Meta search engine |
 

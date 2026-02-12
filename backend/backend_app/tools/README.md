@@ -7,23 +7,36 @@ This module provides utilities and functions for working with MCP servers and to
 ```
 tools/
 ├── __init__.py                    # Module exports
-├── client.py                      # MCP client utilities
-├── discovery.py                   # Tool discovery from MCP servers
-├── models.py                      # Pydantic models for MCP data
-├── tool_discovery.py              # Tool semantic search and indexing
-├── watcher.py                     # MCP watcher daemon (monitors & auto-discovers tools)
-├── README.md                      # This file
+├── models.py                      # Shared Pydantic models (used by all)
+├── tool_discovery.py              # Shared tool search and indexing (used by agents & daemons)
+│
+├── client/                        # MCP client functionality
+│   ├── __init__.py
+│   ├── client.py                  # MCP tool invocation
+│   └── discovery.py               # MCP server tool discovery
+│
+├── daemons/                       # Background processes
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── watcher.py                 # MCP watcher daemon
+│   ├── MCP_WATCHER_SUMMARY.md     # Watcher implementation guide
+│   ├── MCP_WATCHER_ARCHITECTURE.md # System architecture diagrams
+│   ├── MCP_WATCHER_QUICKREF.md    # Quick reference guide
+│   └── MCP_WATCHER_MIGRATION.md   # Migration guide
+│
+├── README.md                      # This file (main documentation)
 ├── TOOL_DISCOVERY_GUIDE.md        # Comprehensive tool discovery guide
-├── TOOL_MCP_COMBINATION_GUIDE.md  # Why combine tool and MCP descriptions
-├── MCP_WATCHER_SUMMARY.md         # Watcher implementation guide
-├── MCP_WATCHER_ARCHITECTURE.md    # System architecture diagrams
-├── MCP_WATCHER_QUICKREF.md        # Quick reference guide
-└── MCP_WATCHER_MIGRATION.md       # Migration guide
+└── TOOL_MCP_COMBINATION_GUIDE.md  # Why combine tool and MCP descriptions
 ```
+
+**Organization Rationale:**
+- **Root level**: Shared utilities used by multiple components (models, tool_discovery)
+- **client/**: MCP client code for discovering and invoking tools
+- **daemons/**: Background processes with their specific documentation
 
 ## Components
 
-### client.py
+### client/client.py
 
 MCP client utilities for connecting to and invoking MCP tools.
 
@@ -42,7 +55,7 @@ result = await run_mcp_tool_async(
 )
 ```
 
-### discovery.py
+### client/discovery.py
 
 Functions for discovering tools from MCP servers.
 
@@ -124,13 +137,13 @@ response = llm_with_tools.invoke("Find papers about quantum computing")
 
 See `TOOL_DISCOVERY_GUIDE.md` and `TOOL_MCP_COMBINATION_GUIDE.md` for comprehensive documentation.
 
-### watcher.py
+### daemons/watcher.py
 
 Background daemon that monitors the `mcps` table and automatically discovers and registers tools from MCP servers.
 
 **Key Functions:**
 - `claim_pending_mcps(limit)`: Claim MCPs needing tool discovery
-- `discover_mcp_tools(mcp)`: Discover tools from MCP server (imported from discovery.py)
+- `discover_mcp_tools(mcp)`: Discover tools from MCP server (imported from client.discovery)
 - `register_tools_for_mcp(mcp, tools)`: Register discovered tools in database
 - `process_mcp(mcp)`: Process a single MCP server
 - `main_loop()`: Main daemon loop
@@ -138,11 +151,11 @@ Background daemon that monitors the `mcps` table and automatically discovers and
 **Usage:**
 ```bash
 # Run as daemon via supervisord
-# Configured in supervisord.conf as [program:mcp_watcher]
+# Configured in supervisord.conf as [program:tools_watcher]
 
 # Or run manually for testing
 cd backend/backend_app
-python -m tools.watcher
+python -m tools.daemons.watcher
 ```
 
 **Configuration:**
@@ -152,11 +165,11 @@ MCP_CLAIM_LIMIT=5      # Max MCPs to process per cycle
 DATABASE_URL=postgresql+psycopg://...
 ```
 
-See the comprehensive documentation files in this directory for more details:
-- `MCP_WATCHER_SUMMARY.md` - Implementation guide and features
-- `MCP_WATCHER_ARCHITECTURE.md` - System architecture and data flows
-- `MCP_WATCHER_QUICKREF.md` - Quick reference and troubleshooting
-- `MCP_WATCHER_MIGRATION.md` - Migration guide for existing tools
+See the comprehensive documentation in the `daemons/` directory:
+- `daemons/MCP_WATCHER_SUMMARY.md` - Implementation guide and features
+- `daemons/MCP_WATCHER_ARCHITECTURE.md` - System architecture and data flows
+- `daemons/MCP_WATCHER_QUICKREF.md` - Quick reference and troubleshooting
+- `daemons/MCP_WATCHER_MIGRATION.md` - Migration guide for existing tools
 
 ## Usage
 
@@ -175,9 +188,8 @@ from tools import (
 )
 
 # Or import specific components
-from mcp.client import run_mcp_tool_async
-from mcp.discovery import discover_mcp_tools
-from mcp.tool_discovery import discover_tools, bind_discovered_tools_to_llm
+from tools.client import run_mcp_tool_async, discover_mcp_tools
+from tools.tool_discovery import discover_tools, bind_discovered_tools_to_llm
 from tools.models import MCPServerConfig
 ```
 
@@ -273,15 +285,15 @@ tools = discover_tools_hybrid(
 
 ### With MCP Watcher Daemon
 
-The MCP watcher daemon (`mcp.watcher`) uses this module to:
+The MCP watcher daemon (`tools.daemons.watcher`) uses this module to:
 1. Discover tools from MCP servers (`discover_mcp_tools`)
 2. Register discovered tools in the database
 3. Index tools for semantic search
 
 ```python
-from mcp.discovery import discover_mcp_tools
+from tools.client import discover_mcp_tools
 
-# In watcher.py
+# In daemons/watcher.py
 tools = discover_mcp_tools(mcp_config)
 for tool in tools:
     register_tool_in_db(tool)

@@ -815,8 +815,7 @@ COLLECTION_DOCS=document_embeddings  # PGVector collection name
 ## Related Services
 
 - **RAG MCP Service** (port 4001): Query and retrieve from RAG
-- **Admin API** (port 4000): Admin UI and management
-- **Web API** (port 8000): Main application API
+- **Admin UI** (port 8000): Admin web interface and management
 - **Basic Tools MCP** (port 5000): General utility tools
 
 ## Troubleshooting

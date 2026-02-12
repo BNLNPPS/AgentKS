@@ -12,8 +12,9 @@
     reverse_proxy http://openwebui:8080
   }
 
-  # /admin protected by forward_auth (includes /admin/api/*)
-  handle_path /admin* {
+  # /api - OpenAI-compatible API for agents (port 4000)
+  # Used by OpenWebUI to call the agent backend
+  handle_path /api* {
     forward_auth http://authentik_proxy:9000 {
       uri /outpost.goauthentik.io/auth/caddy
       copy_headers X-Authentik-Email X-Authentik-Name X-Authentik-Groups
@@ -21,8 +22,8 @@
     reverse_proxy http://backend:4000
   }
 
-  # /web protected by forward_auth (includes /web*)
-  handle_path /web* {
+  # /admin - Admin UI and management APIs (port 8000)
+  handle_path /admin* {
     forward_auth http://authentik_proxy:9000 {
       uri /outpost.goauthentik.io/auth/caddy
       copy_headers X-Authentik-Email X-Authentik-Name X-Authentik-Groups
@@ -39,6 +40,16 @@
       copy_headers X-Authentik-Email X-Authentik-Name X-Authentik-Groups
     }
     reverse_proxy http://backend:4002
+  }
+
+  # /hyperparam - Hyperparameter advisor API (port 4003)
+  # AI-powered hyperparameter optimization suggestions
+  handle_path /hyperparam* {
+    forward_auth http://authentik_proxy:9000 {
+      uri /outpost.goauthentik.io/auth/caddy
+      copy_headers X-Authentik-Email X-Authentik-Name X-Authentik-Groups
+    }
+    reverse_proxy http://backend:4003
   }
 
   respond 404

@@ -7,7 +7,7 @@ This repository is an agentic RAG knowledge-stack composed of multiple services 
 - Admin API (FastAPI): `admin_app/` — builds as the `admin_api` service (exposes port 4000 in compose).
 - Admin UI (FastAPI): `admin_app/app/` — templates and static assets are under `admin_app/app/templates` and `admin_app/app/static`.
 
-Read these files first for accurate context: `README.md`, `docker-compose.yml`, `Caddyfile`, `admin_app/app/main.py`, and `backend/backend_app/app/main.py`.
+Read these files first for accurate context: `README.md`, `docker-compose.yml`, `Caddyfile`, `admin_app/app/main.py`, and `backend/backend_app/agents/main.py`.
 
 ## Big-picture architecture to keep in mind
 
@@ -57,7 +57,7 @@ curl -H "X-Authentik-Groups: admin" http://localhost:4000/admin/api/health
 
 - API logic: `admin_app/app/main.py` (small, focused FastAPI app).
 - UI pages and behavior: `admin_app/app/main.py`, `admin_app/app/templates/` and `admin_app/app/static/`.
-- Backend agent & API: `backend/backend_app/app/main.py`.
+- Backend agent & API: `backend/backend_app/agents/main.py`.
 - Orchestration and routing: `docker-compose.yml` and `Caddyfile`.
 
 If any of the above assumptions are incomplete or you want me to expand the instructions (add run scripts, tests, or CI hints), tell me which area to flesh out and I will iterate.

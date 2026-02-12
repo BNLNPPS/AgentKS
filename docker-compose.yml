@@ -145,6 +145,35 @@ services:
       - searxng
     # MCP server using SSE/HTTP transport on port 5000
 
+  hyperparam_advisor_mcp_service:
+    build: ./backend/hyperparam_advisor_mcp_service
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      - PYTHONUNBUFFERED=1
+      # PostgreSQL connection for RAG vector store
+      - DATABASE_URL=postgresql+psycopg://${AK_POSTGRES_USER}:${AK_POSTGRES_PASSWORD}@postgres:5432/${AK_POSTGRES_DB}
+      # Ollama for embeddings and LLM
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_CHAT_MODEL=llama2:7b
+      - OLLAMA_EMBED_MODEL=nomic-embed-text
+      # RAG collection names
+      - COLLECTION_DOCS=kb_docs
+      - COLLECTION_TOOLS=tool_catalog
+      # Integration with other services
+      - LLM_API_URL=http://backend:4000/v1/chat/completions
+      - RAG_INJECTOR_URL=http://backend:4002
+      - RAG_MCP_URL=http://backend:4001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      backend:
+        condition: service_started
+    # MCP server for hyperparameter optimization with RAG support using stdio transport
+
   backend:
     build: ./backend/backend_app
     environment:

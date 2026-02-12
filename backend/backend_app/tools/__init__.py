@@ -1,16 +1,17 @@
 """
-MCP (Model Context Protocol) Module
+Tools Module
 
 This module contains utilities and functions for working with MCP servers:
 - client: MCP client utilities for connecting to and invoking MCP tools
-- discovery: Functions for discovering tools from MCP servers
+  - client.py: Invoke MCP tools
+  - discovery.py: Discover tools from MCP servers
+- daemons: Background processes
+  - watcher.py: MCP watcher daemon for auto-discovery
 - models: Pydantic models for MCP-related data structures
-- watcher: Daemon for monitoring and auto-discovering MCP tools
 - tool_discovery: Tool discovery and semantic search utilities
 """
 
-from .client import run_mcp_tool_async
-from .discovery import discover_mcp_tools, discover_mcp_tools_async
+from .client import run_mcp_tool_async, discover_mcp_tools, discover_mcp_tools_async
 from .models import MCPSyncRequest, MCPServerConfig
 from .tool_discovery import (
     discover_tools,

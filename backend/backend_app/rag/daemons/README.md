@@ -6,7 +6,7 @@ Background services for RAG (Retrieval-Augmented Generation) system automation.
 
 1. **URL Watcher**: Monitors `urls` table and automatically processes URLs
 
-**Note:** The MCP Watcher daemon has been moved to the `mcp` module (`mcp.watcher`). See `backend_app/mcp/README.md` for details.
+**Note:** The MCP Watcher daemon has been moved to the `tools` module (`tools.watcher`). See `backend_app/tools/README.md` for details.
 
 ---
 
@@ -155,7 +155,7 @@ Tools registered by MCP watcher are automatically available for:
 
 ### Functions Moved from main.py
 
-The following functions were moved from `app/main.py` to `mcp_watcher.py`:
+The following functions were moved from `agents/main.py` to `mcp_watcher.py`:
 
 1. **`tool_upsert()`**: Insert/update tools in database
 2. **Tool indexing**: Now uses `index_tool_with_mcp_context()` from `tool_discovery.py`
@@ -208,7 +208,7 @@ GROUP BY m.id, m.name, m.last_checked_at;
 - Format: `{"type": "bearer", "token": "...", "headers": {...}}`
 - Reset status to trigger re-processing
 
-**Note:** The MCP Watcher daemon has been moved to the `mcp` module (`mcp.watcher`). See `backend_app/mcp/README.md` for details.
+**Note:** The MCP Watcher daemon has been moved to the `tools` module (`tools.watcher`). See `backend_app/tools/README.md` for details.
 
 ---
 

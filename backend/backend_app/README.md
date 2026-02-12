@@ -6,7 +6,7 @@ This folder contains the backend services for AgentKS: a multi-service FastAPI a
 
 ```
 backend_app/
-├── app/                    # Main agent backend (port 4000)
+├── agents/                 # Main agent backend (port 4000)
 │   ├── main.py            # FastAPI app with OpenAI-compatible endpoints
 │   ├── agent_skill.py     # LangGraph agent orchestrator (multi-skill execution)
 │   ├── rag_skill.py       # RAG retrieval skill (LangGraph)
@@ -14,7 +14,7 @@ backend_app/
 │   ├── llms.py            # LLM configuration and database fallback
 │   └── backup/            # Archived code (langgraph_adapter.py.bak)
 │
-├── web/                   # Admin web UI (port 8000)
+├── admin/                 # Admin web UI (port 8000)
 │   ├── main.py           # FastAPI admin interface
 │   ├── templates/        # Jinja2 templates
 │   └── static/           # CSS, JS assets
@@ -23,12 +23,15 @@ backend_app/
 │   ├── rag_mcp/          # MCP server for RAG retrieval (port 4001)
 │   ├── rag_injector/     # REST API for document injection (port 4002)
 │   ├── rag_common.py     # Shared embeddings and DB utilities
-│   └── daemons/          # Background processing (URL watcher, etc.)
+│   └── daemons/          # Background daemons (URL watcher)
 │
 ├── tools/                # MCP tool integration
-│   ├── client.py         # MCP client for tool execution
+│   ├── client/           # MCP client utilities
+│   │   ├── client.py     # Tool invocation
+│   │   └── discovery.py  # Tool discovery from MCP servers
+│   ├── daemons/          # Background processes
+│   │   └── watcher.py    # Auto-discovery daemon
 │   ├── tool_discovery.py # Semantic/hybrid tool search
-│   ├── watcher.py        # Auto-discovery daemon (mcp_watcher)
 │   └── models.py         # Tool data models
 │
 ├── migrations/           # Alembic database migrations
@@ -55,7 +58,7 @@ backend_app/
 - 4002: RAG Injection REST API
 
 **Key Features:**
-- All tools managed via MCP services (basic_tools_mcp_service)
+- All tools managed via MCP services (basic_tools_mcp_service, hyperparam_advisor_mcp_service)
 - Automatic tool discovery with semantic/hybrid search
 - Document management fully delegated to RAG MCP
 - No local vector stores (PGVector via MCP)
@@ -74,7 +77,10 @@ docker compose up --build
 - http://localhost (Caddy reverse proxy with Authentik)
 - http://localhost/webui (OpenWebUI)
 - http://localhost/admin (Admin UI - requires auth)
-- http://localhost/web (Web API - requires auth)
+ - http://localhost/webui (OpenWebUI)
+ - http://localhost/admin (Admin UI - requires auth)
+
+**Note:** The legacy `/web` public route (Web API) has been removed. Use `/admin` for management APIs and `/api` for agent endpoints.
 
 ### Backend Only (Development)
 
@@ -107,8 +113,8 @@ The `startup.sh` script orchestrates initialization:
    ```
 
 2. **Supervisord Launch** - Starts all services in parallel:
-   - `uvicorn web.main:app --host 0.0.0.0 --port 8000` (Admin UI)
-   - `uvicorn app.main:app --host 0.0.0.0 --port 4000` (Agent Backend)
+   - `uvicorn admin.main:app --host 0.0.0.0 --port 8000` (Admin UI)
+   - `uvicorn agents.main:app --host 0.0.0.0 --port 4000` (Agent Backend)
    - `python -u rag/rag_mcp/main.py` (RAG MCP Server, port 4001)
    - `uvicorn rag.rag_injector.main:app --host 0.0.0.0 --port 4002` (RAG Injector)
    - `python -u tools/watcher.py` (mcp_watcher daemon - tool discovery)
@@ -302,13 +308,14 @@ rag/
 │                       # - Embeddings (Ollama)
 │                       # - Database operations
 │
-└── daemons/           # Background processing
+└── daemons/           # Background daemons
+    └── url_watcher.py # URL monitoring daemon
 ```
 
-### Admin UI (`web/`)
+### Admin UI (`admin/`)
 
 ```
-web/
+admin/
 ├── main.py            # FastAPI admin interface
 ├── templates/         # Jinja2 templates
 │   ├── base.html
@@ -377,8 +384,8 @@ pip install -r requirements.txt
 alembic upgrade head
 
 # Run individual services
-uvicorn app.main:app --reload --port 4000
-uvicorn web.main:app --reload --port 8000
+uvicorn agents.main:app --reload --port 4000
+uvicorn admin.main:app --reload --port 8000
 python rag/rag_mcp/main.py
 python tools/watcher.py
 ```
@@ -438,7 +445,7 @@ Query → Analyze → RAG Skill → Tools Skill → Synthesize → Answer
 4. Synthesis node combines results intelligently
 5. Final answer with citations from both sources
 
-See `/docs/AGENT_FLOW.md` for detailed architecture documentation.
+See `/docs/architecture/AGENT_FLOW.md` for detailed architecture documentation.
 
 ## MCP Services Integration
 
@@ -446,6 +453,7 @@ All tools and RAG operations go through MCP services:
 
 **External Services:**
 - `basic_tools_mcp_service` (port 5000) - Search tools (arXiv, CDS, INSPIRE-HEP, SearXNG)
+- `hyperparam_advisor_mcp_service` (port 5001) - ML hyperparameter optimization with RAG
 
 **Internal Services:**
 - RAG MCP (port 4001) - Document retrieval
@@ -527,18 +535,19 @@ When deploying behind Caddy + Authentik (full stack):
 3. **Access via Caddy**:
    - https://your-domain.com/webui (OpenWebUI)
    - https://your-domain.com/admin (Admin UI)
-   - https://your-domain.com/web (Web API)
 
 4. **Authentication** handled by Authentik
 5. **Identity headers** forwarded by Caddy
 
 ## Additional Resources
 
-- **Agent Flow**: `/docs/AGENT_FLOW.md` - Multi-skill execution details
-- **RAG Skill**: `app/RAG_SKILL_GUIDE.md` - RAG configuration
-- **Tools Skill**: `app/TOOLS_SKILL_GUIDE.md` - Tool discovery
-- **LLM Config**: `LLM_MANAGEMENT.md` - LLM setup
-- **MCP Watcher**: `tools/MCP_WATCHER_*.md` - Tool auto-discovery
+- **Documentation Index**: `/docs/INDEX.md` - Complete documentation catalog
+- **Agent Flow**: `/docs/architecture/AGENT_FLOW.md` - Multi-skill execution details
+- **RAG Skill**: `/docs/services/agents/rag_skill.md` - RAG configuration
+- **Tools Skill**: `/docs/services/agents/tools_skill.md` - Tool discovery
+- **LLM Config**: `/docs/guides/llm_management.md` - LLM setup
+- **MCP Watcher**: `/docs/services/tools/mcp_watcher_*.md` - Tool auto-discovery
+- **Tool Discovery**: `/docs/services/tools/tool_discovery.md` - Semantic tool search
 - **Root README**: `/README.md` - Full stack overview
 
 
