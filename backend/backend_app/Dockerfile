@@ -1,8 +1,11 @@
 FROM python:3.11-slim
+
 WORKDIR /app
-# copy requirements and install (includes supervisor)
+
+# Upgrade pip and install dependencies with timeout and retries
 COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir --timeout=300 --retries=10 -r requirements.txt
 
 # copy the full backend app into the image so both ASGI apps are available
 COPY . /app
