@@ -16,7 +16,7 @@ services:
       - authentik_server
       - authentik_proxy
       - openwebui
-      - admin_api
+      - backend
 
   postgres:
     # Use the pgvector-enabled Postgres image so the `vector` extension is available
