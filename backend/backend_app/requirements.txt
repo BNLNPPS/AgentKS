@@ -22,5 +22,5 @@ alembic==1.11.1
 SQLAlchemy>=2.0.0,<2.1.0
 
 # supervisor to manage multiple processes in the container
-supervisor==4.2.6
+supervisor>=4.2.0
 
