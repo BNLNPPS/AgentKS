@@ -18,7 +18,7 @@ mcp
 fastmcp>=0.2.0
 # langchain-mcp-adapters installed separately in Dockerfile to avoid dependency conflicts
 
-langgraph==1.0.7
+langgraph<1.0.0
 alembic==1.11.1
 SQLAlchemy>=2.0.0,<2.1.0
 
