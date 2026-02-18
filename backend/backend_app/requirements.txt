@@ -13,9 +13,10 @@ langchain-postgres==0.0.12
 langchain-text-splitters==0.3.4
 langchain-ollama==0.2.2
 
-langchain-mcp-adapters
+# MCP support
 mcp
 fastmcp>=0.2.0
+# langchain-mcp-adapters installed separately in Dockerfile to avoid dependency conflicts
 
 langgraph==1.0.7
 alembic==1.11.1
