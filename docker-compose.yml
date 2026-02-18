@@ -131,8 +131,13 @@ services:
       - ./searxng:/etc/searxng
 
   basic_tools_mcp_service:
-    build: ./backend/basic_tools_mcp_service
+    build: 
+      context: ./backend/basic_tools_mcp_service
+      network: host
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     ports:
       - "5000:5000"
     environment:
@@ -146,8 +151,13 @@ services:
     # MCP server using SSE/HTTP transport on port 5000
 
   hyperparam_advisor_mcp_service:
-    build: ./backend/hyperparam_advisor_mcp_service
+    build:
+      context: ./backend/hyperparam_advisor_mcp_service
+      network: host
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     ports:
       - "5001:5001"
     environment:
@@ -175,7 +185,12 @@ services:
     # MCP server for hyperparameter optimization with RAG support using stdio transport
 
   backend:
-    build: ./backend/backend_app
+    build:
+      context: ./backend/backend_app
+      network: host
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     environment:
       # Use the root-level postgres service (repo root docker-compose.yml)
       # Ensure AK_POSTGRES_* vars are set in the parent .env
