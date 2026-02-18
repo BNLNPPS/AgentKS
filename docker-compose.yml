@@ -121,6 +121,13 @@ services:
       - "11434:11434"
     volumes:
       - ollama:/root/.ollama
+      - ./ollama-init.sh:/usr/local/bin/ollama-init.sh:ro
+    environment:
+      - OLLAMA_MODELS=/root/.ollama/models
+      - OLLAMA_CHAT_MODEL=${OLLAMA_CHAT_MODEL:-llama2:7b}
+      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+    entrypoint: ["/bin/bash", "/usr/local/bin/ollama-init.sh"]
+    # Default models auto-pulled on first startup (configurable via env vars)
 
   searxng:
     image: searxng/searxng:latest
