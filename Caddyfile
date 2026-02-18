@@ -55,7 +55,7 @@
   respond 404
 }
 
-# Authentik UI on a subdomain (recommended)
-{$AUTH_DOMAIN} {
+# Authentik UI on /auth path (same domain)
+{$DOMAIN}/auth* {
   reverse_proxy http://authentik_server:9000
 }

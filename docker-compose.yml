@@ -3,11 +3,10 @@ services:
     image: caddy:2.8
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8080:80"
       - "443:443"
     environment:
       - DOMAIN=${DOMAIN}
-      - AUTH_DOMAIN=${AUTH_DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
