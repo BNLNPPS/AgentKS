@@ -33,9 +33,9 @@ AgentKS is an agentic RAG (Retrieval-Augmented Generation) knowledge stack under
 │  :8080   │    │  :8000   │
 └────┬─────┘    └────┬─────┘
      │               │               
-     │        ┌──────┴
-     │        │
-     │   ┌────▼────────────────────────────────┐
+     │               |
+     │               │
+     │   ┌───────────▼─────────────────────────┐
      │   │   Agent Backend (:4000)             │
      │   │  ┌───────────────────────────────┐  │
      │   │  │  LangGraph Agent              │  │
@@ -45,7 +45,7 @@ AgentKS is an agentic RAG (Retrieval-Augmented Generation) knowledge stack under
      │   │  └───────────────────────────────┘  │
      │   └─────┬──────────────────┬────────────┘
      │         │                  │
-     │    ┌────▼─────┐      ┌────▼───────────┐
+     │    ┌────▼─────┐      ┌────-▼──────────┐
      │    │ RAG MCP  │      │  Tools MCP     │
      │    │  :5000   │      │   :5010        │
      │    │          │      │  - arXiv       │
@@ -110,7 +110,7 @@ AgentKS/
 
 ```bash
 # Clone repository
-git clone https://github.com/InnovateAILab/AgentKS.git
+git clone https://github.com/BNLNPPS/AgentKS.git
 cd AgentKS
 
 # Configure environment
@@ -124,7 +124,7 @@ docker compose up --build -d
 docker compose logs -f
 
 # Check status
-./status
+docker compose ps
 ```
 
 ### Access Services
@@ -230,16 +230,19 @@ POST /api/v1/chat/completions
 **Skills API** (internal use):
 ```bash
 # RAG Skill - Run RAG with LLM generation
-POST /api/rag-skill/run
+POST /api/rag-skill/ask
 
-# RAG Skill - Retrieve documents only (no LLM)
-POST /api/rag-skill/retrieve
+# RAG Skill - List available RAG groups
+GET /api/rag-skill/groups
+
+# RAG Skill - Smoke test
+GET /api/rag-skill/test
 
 # Tools Skill - Run tools with dynamic discovery
-POST /api/tools-skill/run
+POST /api/tools-skill/query
 
-# Tools Skill - Discover tools without execution
-POST /api/tools-skill/discover
+# Tools Skill - Smoke test
+GET /api/tools-skill/test
 ```
 
 ### RAG Injector (via /rag prefix)
@@ -314,7 +317,7 @@ curl -H "X-Authentik-Groups: admin" \
 ```bash
 # Domain configuration
 DOMAIN=your-domain.com
-AUTH_DOMAIN=auth.your-domain.com
+# Note: AUTH_DOMAIN is the same as DOMAIN — Authentik is served under the same domain
 
 # Authentik
 AUTHENTIK_TAG=2024.2.0
@@ -394,20 +397,20 @@ alembic upgrade head
 # Run services individually
 uvicorn agents.main:app --reload --port 4000
 uvicorn admin.main:app --reload --port 8000
-python rag/rag_mcp/main.py
-python tools/watcher.py
+python -m urls.daemons.url_watcher
+python -m tools.daemons.watcher
 ```
 
 ### Testing Agent Skills
 
 ```bash
 # Test RAG skill
-curl -X POST http://localhost:4000/api/rag-skill/run \
+curl -X POST http://localhost:8000/api/rag-skill/ask \
   -H "Content-Type: application/json" \
   -d '{"query": "What is quantum computing?", "k": 5}'
 
 # Test Tools skill
-curl -X POST http://localhost:4000/api/tools-skill/run \
+curl -X POST http://localhost:8000/api/tools-skill/query \
   -H "Content-Type: application/json" \
   -d '{
     "query": "search arXiv for transformer papers",
@@ -427,9 +430,9 @@ curl -X POST http://localhost:4000/v1/chat/completions \
 ### Useful Scripts
 
 ```bash
-./run       # Start services
-./status    # Check service status  
-./stop      # Stop all services
+docker compose up -d
+docker compose ps
+docker compose logs -f
 ```
 
 ## 📚 Documentation
@@ -438,13 +441,10 @@ curl -X POST http://localhost:4000/v1/chat/completions \
 - **[`docs/INDEX.md`](docs/INDEX.md)** - Complete documentation index
 - **[`docs/architecture/STRUCTURE.md`](docs/architecture/STRUCTURE.md)** - Repository structure and architecture
 - **[`docs/architecture/AGENT_FLOW.md`](docs/architecture/AGENT_FLOW.md)** - Multi-skill agent execution patterns
-- **[`docs/architecture/OPENWEBUI_AUTHENTIK.md`](docs/architecture/OPENWEBUI_AUTHENTIK.md)** - OpenWebUI Authentik integration
 - **[`docs/architecture/CADDY_ROUTING.md`](docs/architecture/CADDY_ROUTING.md)** - Caddy routing and path rewriting
 - **[`docs/services/backend_app.md`](docs/services/backend_app.md)** - Backend services guide
 - **[`docs/guides/llm_management.md`](docs/guides/llm_management.md)** - LLM configuration
 - **[`docs/services/agents/rag_skill.md`](docs/services/agents/rag_skill.md)** - RAG skill usage
-- **[`docs/services/agents/tools_skill.md`](docs/services/agents/tools_skill.md)** - Tools skill usage
-- **[`docs/services/tools/mcp_watcher_*.md`](docs/services/tools/)** - MCP watcher documentation
 - **[`docs/services/mcp_services/hyperparam_advisor.md`](docs/services/mcp_services/hyperparam_advisor.md)** - Hyperparameter optimization tool
 
 ## 🔐 Authentication Flow
@@ -524,7 +524,7 @@ docker compose exec postgres psql -U authentik -d authentik \
 
 ```bash
 # Test tool discovery
-curl -X POST http://localhost:4000/api/tools-skill/discover \
+curl -X POST http://localhost:8000/api/tools-skill/query \
   -H "Content-Type: application/json" \
   -d '{"query": "search for papers", "user_id": "test", "role": "user"}'
 
@@ -535,14 +535,14 @@ docker compose exec backend env | grep TOOL_SELECT_TOPK
 ### RAG returns no results
 
 ```bash
-# Check RAG MCP service
-curl http://localhost:5000/sse/tools/list
+# Check RAG MCP service is up
+curl http://localhost:5000/health
 
-# Verify documents ingested
+# Verify injector
 curl http://localhost:5001/health
 
 # Test retrieval directly
-curl -X POST http://localhost:4000/api/rag-skill/retrieve \
+curl -X POST http://localhost:8000/api/rag-skill/ask \
   -H "Content-Type: application/json" \
   -d '{"query": "test query", "k": 5}'
 ```
@@ -554,7 +554,7 @@ curl -X POST http://localhost:4000/api/rag-skill/retrieve \
 - [ ] Configure `.env` with production values
 - [ ] Set strong passwords for `AK_POSTGRES_PASSWORD`, `AK_REDIS_PASSWORD`
 - [ ] Generate secure `AUTHENTIK_SECRET_KEY` (50+ characters)
-- [ ] Configure `DOMAIN` and `AUTH_DOMAIN`
+- [ ] Configure `DOMAIN` (Authentik uses the same domain)
 - [ ] Set up DNS records pointing to your server
 - [ ] Configure Authentik via admin panel
 - [ ] Create outpost in Authentik, get token for `AUTHENTIK_OUTPOST_TOKEN`
@@ -576,7 +576,7 @@ docker compose logs -f
 
 - **Main Application**: https://your-domain.com/webui
 - **Admin Dashboard**: https://your-domain.com/admin
-- **Authentik Admin**: https://auth.your-domain.com
+- **Authentik Admin**: https://your-domain.com/if/admin/
 
 ### Monitoring
 
@@ -632,13 +632,13 @@ docker compose exec backend supervisorctl status
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/InnovateAILab/AgentKS/issues)
+- **Issues**: [GitHub Issues](https://github.com/BNLNPPS/AgentKS/issues)
 - **Documentation**: See `docs/` directory
 - **Copilot Context**: `.github/copilot-instructions.md`
 
 ---
 
-**Made with ❤️ by InnovateAILab**
+**Made with ❤️ by BNLNPPS**
 
 
 

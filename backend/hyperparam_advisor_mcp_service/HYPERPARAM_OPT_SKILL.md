@@ -107,7 +107,7 @@ from hyperparam_skill import create_hyperparam_skill
 
 # Create skill instance
 skill = create_hyperparam_skill(
-    llm_api_url="http://backend:8000/v1/chat/completions",
+    llm_api_url="http://backend:4000/v1/chat/completions",
     embedding_model="nomic-embed-text",
     collection_name="hyperparameter_embeddings",
     max_iterations=2
@@ -157,6 +157,13 @@ print(result["insights"])
   "confidence": 0.85,
   "insights": [
     "Higher batch sizes correlate with better performance",
+    "Adam optimizer outperforms SGD on this problem"
+  ]
+}
+```
+
+### 3. Extraction & Validation
+**What happens**:
 - Parse JSON suggestions from LLM response
 - Validate each suggestion against parameter constraints
 - Apply type checking (categorical choices, numeric bounds)
@@ -252,7 +259,7 @@ OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_EMBED_MODEL=nomic-embed-text
 
 # LLM API for analysis
-LLM_API_URL=http://backend:8000/v1/chat/completions
+LLM_API_URL=http://backend:4000/v1/chat/completions
 
 # Optimization settings
 MAX_ITERATIONS=2  # For LLM refinement loops

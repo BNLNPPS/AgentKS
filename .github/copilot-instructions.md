@@ -2,62 +2,86 @@
 
 This repository is an agentic RAG knowledge-stack composed of multiple services wired by Docker Compose and Caddy. Key pieces:
 
-- Top-level orchestration: `docker-compose.yml` (services: `caddy`, `authentik_*`, `openwebui`, `admin_api`, `rag-backend`).
-- HTTP ingress & auth: `Caddyfile` — Caddy uses forward_auth (Authentik) and injects headers `X-Authentik-Email`, `X-Authentik-Name`, `X-Authentik-Groups` into proxied requests.
-- Admin API (FastAPI): `admin_app/` — builds as the `admin_api` service (exposes port 4000 in compose).
-- Admin UI (FastAPI): `admin_app/app/` — templates and static assets are under `admin_app/app/templates` and `admin_app/app/static`.
+- **Orchestration:** `docker-compose.yml` — services: `caddy`, `postgres`, `redis`, `authentik_*`, `openwebui`, `ollama`, `searxng`, `rag_mcp_service`, `basic_tools_mcp_service`, `hyperparam_advisor_mcp_service`, `backend`.
+- **HTTP ingress & auth:** `Caddyfile` — Caddy uses `forward_auth` (Authentik proxy) and injects headers `X-Authentik-Email`, `X-Authentik-Name`, `X-Authentik-Groups` into every proxied request.
+- **Agent API + Admin UI:** `backend/backend_app/` — two FastAPI apps run via `supervisord` (agent API on port 4000, admin UI on port 8000).
+- **RAG service:** `backend/rag_mcp_service/` — FastMCP SSE server on port 5000 (retrieval) + FastAPI REST injector on port 5001 (ingestion).
+- **Tools MCP:** `backend/basic_tools_mcp_service/` — FastMCP SSE server on port 5010.
+- **Hyperparam MCP:** `backend/hyperparam_advisor_mcp_service/` — MCP stdio server on port 5020; calls `rag_mcp_service` over HTTP.
 
-Read these files first for accurate context: `README.md`, `docker-compose.yml`, `Caddyfile`, `admin_app/app/main.py`, and `backend/backend_app/agents/main.py`.
+Read these files first for accurate context: `README.md`, `docker-compose.yml`, `Caddyfile`, `backend/backend_app/agents/main.py`, `backend/backend_app/admin/main.py`.
 
-## Big-picture architecture to keep in mind
+## Big-picture architecture
 
-- Caddy is the public router. Requests to `/admin*` are forwarded to `admin_api` only after forward_auth succeeds. Authentication metadata is delivered via headers — treat those as the canonical identity source for backend and UI code.
-- The admin UI stores demo data in-memory; there is no persistent DB used by the admin UI code. Changes via the UI/API do not persist across restarts unless you add a persistence layer.
-- `admin_app` is a simple FastAPI example showing header-based admin gating (`require_admin` reads `X-Authentik-Groups`).
+- **Caddy** is the public router. All paths (`/api*`, `/admin*`, `/webui*`, `/rag*`, `/hyperparam*`) are gated by `forward_auth` before being proxied to the appropriate backend container.
+- **Authentication metadata is delivered via headers** — treat `X-Authentik-*` headers as the canonical identity source; never trust user-supplied identity data.
+- **`DOMAIN`** is the single public domain. Authentik is served under the same domain (no separate `AUTH_DOMAIN`).
+- **Persistence:** the `backend` services use PostgreSQL (via SQLAlchemy + Alembic). There is no in-memory-only storage in production code.
+
+## Port reference
+
+| Container | Port | Purpose |
+|-----------|------|---------|
+| `backend` | 4000 | Agent API (OpenAI-compatible `/v1/chat/completions`) |
+| `backend` | 8000 | Admin UI |
+| `rag_mcp_service` | 5000 | RAG MCP SSE (retrieval) |
+| `rag_mcp_service` | 5001 | RAG Injector REST (ingestion) |
+| `basic_tools_mcp_service` | 5010 | Tools MCP SSE |
+| `hyperparam_advisor_mcp_service` | 5020 | Hyperparam MCP |
+| `openwebui` | 8080 | Chat UI |
+| `ollama` | 11434 | LLM inference |
 
 ## Developer workflows and useful commands
 
-- Bring up the full stack for integration testing: run `docker compose up --build` from the repo root (see `docker-compose.yml`). This launches Caddy, Authentik, OpenWebUI, the admin_api service and the rag-backend.
-- Run the admin UI locally (fast check) — build and run the `admin_app` Docker image:
+Bring up the full stack:
 
 ```bash
-docker build -t agentks-admin ./admin_app
-docker run --rm -p 4000:4000 agentks-admin
+docker compose up --build
 ```
 
-then open: http://localhost:4000/admin
-
-- Health endpoint: `GET /admin/api/health` returns `{"ok": true}`. Example (simulate trusted headers):
+Run the backend locally (fast check):
 
 ```bash
-curl -H "X-Authentik-Groups: admin" http://localhost:4000/admin/api/health
+cd backend/backend_app
+docker build -t agentks-backend .
+docker run --rm -p 4000:4000 -p 8000:8000 agentks-backend
 ```
 
-## Important code patterns and conventions (concrete examples)
+Health check (simulate authenticated admin request):
 
-- Header-based identity: code expects Authentik to inject headers — see `admin_app/app/main.py`.
-  - Use `request.headers.get("X-Authentik-Groups")` to check admin privileges. Example: `if "admin" not in groups.lower(): raise HTTPException(403)`
+```bash
+curl -H "X-Authentik-Groups: admin" http://localhost:8000/admin/api/health
+```
 
-- In-memory collections (no persistence): demo resources are stored in Python lists in the admin UI handlers; when editing or extending endpoints, remember the lack of persistence and either add persistence intentionally or document ephemeral behavior.
+## Important code patterns and conventions
 
-- Template rendering: The UI uses Jinja2 templates in `admin_app/app/templates` and static assets in `admin_app/app/static`. Keep UI changes there.
+- **Header-based identity** — see `backend/backend_app/admin/main.py`:
+  ```python
+  groups = request.headers.get("X-Authentik-Groups", "")
+  if "admin" not in groups.lower():
+      raise HTTPException(status_code=403)
+  ```
 
-## Integration points and external dependencies
+- **LangGraph agent flow** — `agents/agent_skill.py` orchestrates `rag_skill.py` (calls `rag_mcp_service:5000`) and `tools_skill.py` (calls registered MCP servers).
 
-- Authentik: required for forward_auth flow. Caddy forwards auth to `authentik_proxy`; identity info is shared via request headers as above.
-- OpenWebUI: reverse proxied at `/webui` and configured to trust the same header names.
-- Docker images and tags are configured in `docker-compose.yml` via environment vars — respect those when changing images.
+- **RAG group model** — documents belong to a named RAG group with a specific `embed_model`. Always specify `embed_model` when creating groups; it must match the model used at query time.
 
-## Safety and quick diagnostics
+- **Template rendering** — Admin UI uses Jinja2 templates in `backend/backend_app/admin/templates/` and static assets in `backend/backend_app/admin/static/`.
 
-- To simulate an authenticated admin request locally, set the `X-Authentik-*` headers in curl or your browser proxy.
-- Remember that running the full stack requires several env vars used by `docker-compose.yml` (e.g. DOMAIN, AUTH_DOMAIN, AUTHENTIK_* and AK_* variables). If missing, the stack may fail to start.
+- **Migrations** — run `alembic upgrade head` (via `startup.sh`) before starting services. Never modify DB schema outside of Alembic migrations.
 
 ## Where to make changes
 
-- API logic: `admin_app/app/main.py` (small, focused FastAPI app).
-- UI pages and behavior: `admin_app/app/main.py`, `admin_app/app/templates/` and `admin_app/app/static/`.
-- Backend agent & API: `backend/backend_app/agents/main.py`.
-- Orchestration and routing: `docker-compose.yml` and `Caddyfile`.
-
-If any of the above assumptions are incomplete or you want me to expand the instructions (add run scripts, tests, or CI hints), tell me which area to flesh out and I will iterate.
+| What | Where |
+|------|-------|
+| Agent logic / chat endpoint | `backend/backend_app/agents/main.py` |
+| LangGraph orchestration | `backend/backend_app/agents/agent_skill.py` |
+| RAG retrieval skill | `backend/backend_app/agents/rag_skill.py` |
+| Tool execution skill | `backend/backend_app/agents/tools_skill.py` |
+| Admin UI pages & API | `backend/backend_app/admin/main.py` + `templates/` + `static/` |
+| RAG MCP (retrieval) | `backend/rag_mcp_service/rag_mcp.py` |
+| RAG Injector (ingestion) | `backend/rag_mcp_service/rag_injector.py` |
+| Tools MCP | `backend/basic_tools_mcp_service/main.py` |
+| Hyperparam MCP | `backend/hyperparam_advisor_mcp_service/main.py` |
+| HTTP routing & auth | `Caddyfile` |
+| Service orchestration | `docker-compose.yml` |

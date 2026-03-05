@@ -1,125 +1,83 @@
 # Tools Module (MCP Integration)
 
-This module provides utilities and functions for working with MCP servers and tool discovery in the AgentKS system.
+Utilities for discovering and invoking tools from MCP servers, and for semantic
+tool search within the AgentKS agent pipeline.
 
-## Structure
+---
+
+## Directory Structure
 
 ```
 tools/
-├── __init__.py                    # Module exports
-├── models.py                      # Shared Pydantic models (used by all)
-├── tool_discovery.py              # Shared tool search and indexing (used by agents & daemons)
-│
-├── client/                        # MCP client functionality
-│   ├── __init__.py
-│   ├── client.py                  # MCP tool invocation
-│   └── discovery.py               # MCP server tool discovery
-│
-├── daemons/                       # Background processes
-│   ├── __init__.py
+├── __init__.py          # Module exports
+├── models.py            # Pydantic models (MCPServerConfig, MCPSyncRequest)
+├── tool_discovery.py    # Semantic + hybrid tool search and indexing
+├── client/
+│   ├── client.py        # MCP tool invocation (run_mcp_tool_async)
+│   └── discovery.py     # MCP server tool discovery
+├── daemons/
 │   ├── __main__.py
-│   ├── watcher.py                 # MCP watcher daemon
-│   ├── MCP_WATCHER_SUMMARY.md     # Watcher implementation guide
-│   ├── MCP_WATCHER_ARCHITECTURE.md # System architecture diagrams
-│   ├── MCP_WATCHER_QUICKREF.md    # Quick reference guide
-│   └── MCP_WATCHER_MIGRATION.md   # Migration guide
-│
-├── README.md                      # This file (main documentation)
-├── TOOL_DISCOVERY_GUIDE.md        # Comprehensive tool discovery guide
-└── TOOL_MCP_COMBINATION_GUIDE.md  # Why combine tool and MCP descriptions
+│   └── watcher.py       # MCP watcher daemon (tools_watcher supervisord process)
+└── README.md            # This file
 ```
 
-**Organization Rationale:**
-- **Root level**: Shared utilities used by multiple components (models, tool_discovery)
-- **client/**: MCP client code for discovering and invoking tools
-- **daemons/**: Background processes with their specific documentation
+---
 
 ## Components
 
-### client/client.py
+### `client/client.py`
 
-MCP client utilities for connecting to and invoking MCP tools.
+Connects to an MCP server (SSE transport) and invokes a named tool.
 
-**Functions:**
-- `run_mcp_tool_async(mcp_url, headers, tool_name, payload)`: Connect to an MCP server and invoke a specific tool
-
-**Example:**
 ```python
 from tools import run_mcp_tool_async
 
 result = await run_mcp_tool_async(
-    mcp_url="http://mcp-server:5000/mcp",
-    headers={"Authorization": "Bearer token"},
+    mcp_url="http://basic_tools_mcp_service:5010/mcp",
+    headers={},
     tool_name="arxiv_search",
     payload={"query": "quantum computing"}
 )
 ```
 
-### client/discovery.py
+### `client/discovery.py`
 
-Functions for discovering tools from MCP servers.
+Discovers the list of tools exposed by an MCP server.
 
-**Functions:**
-- `discover_mcp_tools_async(mcp)`: Async function to discover tools from an MCP server
-- `discover_mcp_tools(mcp)`: Synchronous wrapper for `discover_mcp_tools_async`
-
-**Example:**
 ```python
 from tools import discover_mcp_tools
 
-mcp_config = {
-    "endpoint": "http://mcp-server:5000/mcp",
-    "auth": {
-        "type": "bearer",
-        "token": "secret-token"
-    }
-}
-
-tools = discover_mcp_tools(mcp_config)
-# Returns: [{"name": "tool1", "description": "...", "inputSchema": {...}}, ...]
+tools = discover_mcp_tools({
+    "endpoint": "http://basic_tools_mcp_service:5010/mcp",
+    "auth": None
+})
+# Returns: [{"name": "arxiv_search", "description": "...", "inputSchema": {...}}, ...]
 ```
 
-### models.py
+### `models.py`
 
-Pydantic models for MCP-related data structures.
+| Model | Purpose |
+|-------|---------|
+| `MCPServerConfig` | Configuration record for a registered MCP server |
+| `MCPSyncRequest` | Request model for triggering tool sync from an MCP server |
 
-**Models:**
-- `MCPSyncRequest`: Request model for syncing tools from an MCP server
-- `MCPServerConfig`: Configuration for an MCP server
+### `tool_discovery.py`
 
-**Example:**
-```python
-from tools.models import MCPServerConfig
+Semantic and hybrid tool search used by `tools_skill.py` to select which tools
+to offer the LLM for a given query.
 
-mcp = MCPServerConfig(
-    id="mcp-001",
-    name="Research Tools",
-    endpoint="http://mcp:5000/mcp",
-    description="Tools for academic research",
-    context="Physics and mathematics",
-    resource="arXiv, INSPIRE-HEP",
-    status="enabled"
-)
-```
+| Function | Description |
+|----------|-------------|
+| `discover_tools(query, ...)` | Semantic search — returns ranked tool list |
+| `discover_tools_hybrid(query, ...)` | Semantic + keyword combined scoring |
+| `bind_discovered_tools_to_llm(llm, tools)` | Bind tool list to a LangChain LLM |
+| `index_tool_with_mcp_context(...)` | Index a tool with full MCP context |
+| `index_tool_simple(...)` | Index a tool without MCP context |
+| `reindex_all_tools()` | Re-index all tools in the database |
 
-### tool_discovery.py
-
-Tool discovery and semantic search utilities for finding and ranking tools based on queries.
-
-**Key Functions:**
-- `discover_tools(query, user_scope, top_k, enabled_only, tags, min_score)`: Semantic search for tools
-- `discover_tools_hybrid(query, semantic_weight, keyword_weight)`: Combined semantic + keyword scoring
-- `bind_discovered_tools_to_llm(llm, discovered_tools)`: Bind tools to LangChain LLM
-- `index_tool_with_mcp_context(...)`: Index tool with MCP context for richer search
-- `index_tool_simple(...)`: Simple tool indexing without MCP context
-- `reindex_all_tools()`: Re-index all tools with MCP context
-
-**Example:**
 ```python
 from tools import discover_tools, bind_discovered_tools_to_llm
-from app.llms import get_llm
 
-# Discover relevant tools
 tools = discover_tools(
     query="search for physics papers",
     user_scope="global",
@@ -127,369 +85,65 @@ tools = discover_tools(
     enabled_only=True
 )
 
-# Bind to LLM
-llm = get_llm()
 llm_with_tools = bind_discovered_tools_to_llm(llm, tools)
-
-# Use in agent
-response = llm_with_tools.invoke("Find papers about quantum computing")
 ```
 
-See `TOOL_DISCOVERY_GUIDE.md` and `TOOL_MCP_COMBINATION_GUIDE.md` for comprehensive documentation.
+### `daemons/watcher.py`
 
-### daemons/watcher.py
+Background daemon (runs as `tools_watcher` under `supervisord`) that polls the
+`mcps` table, discovers tools from newly registered MCP servers, and indexes
+them for semantic search.
 
-Background daemon that monitors the `mcps` table and automatically discovers and registers tools from MCP servers.
-
-**Key Functions:**
-- `claim_pending_mcps(limit)`: Claim MCPs needing tool discovery
-- `discover_mcp_tools(mcp)`: Discover tools from MCP server (imported from client.discovery)
-- `register_tools_for_mcp(mcp, tools)`: Register discovered tools in database
-- `process_mcp(mcp)`: Process a single MCP server
-- `main_loop()`: Main daemon loop
-
-**Usage:**
 ```bash
-# Run as daemon via supervisord
-# Configured in supervisord.conf as [program:tools_watcher]
-
-# Or run manually for testing
+# Run manually for testing
 cd backend/backend_app
-python -m tools.daemons.watcher
+python -m tools.daemons
 ```
 
-**Configuration:**
-```bash
-MCP_CHECK_INTERVAL=60  # Check interval in seconds
-MCP_CLAIM_LIMIT=5      # Max MCPs to process per cycle
-DATABASE_URL=postgresql+psycopg://...
-```
+Environment variables:
 
-See the comprehensive documentation in the `daemons/` directory:
-- `daemons/MCP_WATCHER_SUMMARY.md` - Implementation guide and features
-- `daemons/MCP_WATCHER_ARCHITECTURE.md` - System architecture and data flows
-- `daemons/MCP_WATCHER_QUICKREF.md` - Quick reference and troubleshooting
-- `daemons/MCP_WATCHER_MIGRATION.md` - Migration guide for existing tools
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_CHECK_INTERVAL` | `60` | Poll interval (seconds) |
+| `MCP_CLAIM_LIMIT` | `5` | Max MCPs processed per cycle |
+| `DATABASE_URL` | from env | PostgreSQL connection string |
 
-## Usage
+---
 
-### Basic Import
+## Full Import Reference
 
 ```python
-# Import everything
 from tools import (
-    run_mcp_tool_async,
-    discover_mcp_tools,
-    discover_tools,
-    discover_tools_hybrid,
+    run_mcp_tool_async,       # Invoke an MCP tool
+    discover_mcp_tools,       # Discover tools from an MCP server (sync)
+    discover_mcp_tools_async, # Discover tools from an MCP server (async)
+    discover_tools,           # Semantic tool search
+    discover_tools_hybrid,    # Semantic + keyword tool search
     bind_discovered_tools_to_llm,
     MCPSyncRequest,
-    MCPServerConfig
-)
-
-# Or import specific components
-from tools.client import run_mcp_tool_async, discover_mcp_tools
-from tools.tool_discovery import discover_tools, bind_discovered_tools_to_llm
-from tools.models import MCPServerConfig
-```
-
-### Discovering Tools from MCP
-
-```python
-import asyncio
-from tools import discover_mcp_tools_async
-
-async def main():
-    mcp_config = {
-        "name": "Basic Tools MCP",
-        "endpoint": "http://basic_tools_mcp_service:5000/mcp",
-        "auth": None  # No auth required
-    }
-    
-    tools = await discover_mcp_tools_async(mcp_config)
-    
-    for tool in tools:
-        print(f"Tool: {tool['name']}")
-        print(f"Description: {tool['description']}")
-        print(f"Schema: {tool['inputSchema']}")
-        print()
-
-asyncio.run(main())
-```
-
-### Invoking MCP Tools
-
-```python
-import asyncio
-from tools import run_mcp_tool_async
-
-async def search_papers():
-    result = await run_mcp_tool_async(
-        mcp_url="http://basic_tools_mcp_service:5000/mcp",
-        headers={},
-        tool_name="arxiv_search",
-        payload={
-            "query": "quantum computing",
-            "max_results": 5
-        }
-    )
-    return result
-
-result = asyncio.run(search_papers())
-print(result)
-```
-
-### Semantic Tool Search
-
-```python
-from tools import discover_tools, bind_discovered_tools_to_llm
-from app.llms import get_llm
-
-# Find tools relevant to a query using semantic search
-tools = discover_tools(
-    query="I need to search for physics papers",
-    user_scope="global",
-    top_k=5,
-    enabled_only=True,
-    tags=["physics", "research"],  # optional filtering
-    min_score=0.5
-)
-
-print(f"Found {len(tools)} relevant tools:")
-for tool in tools:
-    print(f"- {tool['name']}: {tool['description']} (score: {tool['score']:.2f})")
-
-# Bind discovered tools to LLM for agent use
-llm = get_llm()
-llm_with_tools = bind_discovered_tools_to_llm(llm, tools)
-
-# Now the LLM can use these tools
-response = llm_with_tools.invoke("Find recent papers about quantum computing")
-```
-
-### Hybrid Search (Semantic + Keyword)
-
-```python
-from tools import discover_tools_hybrid
-
-# Combine semantic understanding with keyword matching
-tools = discover_tools_hybrid(
-    query="arxiv physics search",
-    semantic_weight=0.7,  # 70% semantic relevance
-    keyword_weight=0.3,   # 30% keyword matching
-    top_k=5
+    MCPServerConfig,
 )
 ```
+
+---
 
 ## Integration Points
 
-### With MCP Watcher Daemon
+| Consumer | What it uses |
+|----------|-------------|
+| `agents/tools_skill.py` | `discover_tools`, `run_mcp_tool_async` |
+| `admin/main.py` | `MCPSyncRequest`, `discover_mcp_tools` |
+| `daemons/watcher.py` | `discover_mcp_tools`, `index_tool_with_mcp_context` |
 
-The MCP watcher daemon (`tools.daemons.watcher`) uses this module to:
-1. Discover tools from MCP servers (`discover_mcp_tools`)
-2. Register discovered tools in the database
-3. Index tools for semantic search
-
-```python
-from tools.client import discover_mcp_tools
-
-# In daemons/watcher.py
-tools = discover_mcp_tools(mcp_config)
-for tool in tools:
-    register_tool_in_db(tool)
-    index_tool_for_search(tool)
-```
-
-### With Backend API
-
-The main backend API (`app/main.py`) uses this module to:
-1. Execute MCP tools on demand (`run_mcp_tool_async`)
-2. Sync tools from MCP servers (via `MCPSyncRequest`)
-
-```python
-from tools import run_mcp_tool_async
-from tools.models import MCPSyncRequest
-
-# Execute MCP tool
-result = await run_mcp_tool_async(
-    mcp_url=tool_config["endpoint"],
-    headers=auth_headers,
-    tool_name=tool_name,
-    payload=tool_input
-)
-```
-
-### With Tool Discovery
-
-The tool discovery system (`app/tool_discovery.py`) indexes tools discovered by this module for semantic search.
-
-## Authentication
-
-MCP servers can be configured with various authentication methods:
-
-### Bearer Token
-
-```python
-mcp_config = {
-    "endpoint": "http://mcp:5000",
-    "auth": {
-        "type": "bearer",
-        "token": "my-secret-token"
-    }
-}
-```
-
-### Custom Headers
-
-```python
-mcp_config = {
-    "endpoint": "http://mcp:5000",
-    "auth": {
-        "type": "token",
-        "token": "my-token",
-        "headers": {
-            "X-API-Key": "api-key-123",
-            "X-Client-ID": "client-456"
-        }
-    }
-}
-```
-
-### No Authentication
-
-```python
-mcp_config = {
-    "endpoint": "http://mcp:5000",
-    "auth": None
-}
-```
-
-## Error Handling
-
-All functions in this module raise exceptions on errors:
-
-```python
-from tools import discover_mcp_tools
-
-try:
-    tools = discover_mcp_tools(mcp_config)
-except RuntimeError as e:
-    # langchain_mcp_adapters not available
-    print(f"MCP client not available: {e}")
-except ValueError as e:
-    # Tool not found
-    print(f"Tool error: {e}")
-except Exception as e:
-    # Connection errors, timeouts, etc.
-    print(f"Discovery failed: {e}")
-```
-
-## Dependencies
-
-This module requires:
-- `langchain_mcp_adapters`: For MCP client functionality
-- `pydantic`: For data models
-- `asyncio`: For async operations
-
-Install with:
-```bash
-pip install langchain-mcp-adapters pydantic
-```
-
-## Testing
-
-### Unit Tests
-
-```python
-import pytest
-from tools import discover_mcp_tools
-from tools.models import MCPServerConfig
-
-def test_mcp_server_config():
-    config = MCPServerConfig(
-        id="test",
-        name="Test MCP",
-        endpoint="http://test:5000"
-    )
-    assert config.id == "test"
-    assert config.status == "pending"  # default
-
-@pytest.mark.asyncio
-async def test_discover_tools():
-    # Mock MCP server
-    mcp = {"endpoint": "http://mock:5000", "auth": None}
-    # Would need actual mock here
-    tools = await discover_mcp_tools_async(mcp)
-    assert isinstance(tools, list)
-```
-
-### Integration Tests
-
-```bash
-# Start test MCP server
-docker-compose up -d basic_tools_mcp_service
-
-# Run tests
-pytest tests/test_mcp.py -v
-```
+---
 
 ## Troubleshooting
 
-### ImportError: langchain_mcp_adapters not found
+**`ImportError: langchain_mcp_adapters not found`**  
+Install: `pip install langchain-mcp-adapters`
 
-**Solution:** Install the package:
-```bash
-pip install langchain-mcp-adapters
-```
+**Connection refused / Timeout**  
+Check the MCP service is running: `curl http://basic_tools_mcp_service:5010/health`
 
-### RuntimeError: MCP client not available
-
-**Solution:** Ensure `langchain_mcp_adapters` is installed and importable.
-
-### Connection refused / Timeout
-
-**Solution:** 
-1. Check MCP server is running: `curl http://mcp-server:5000/health`
-2. Verify endpoint URL is correct
-3. Check firewall/network settings
-4. Review MCP server logs
-
-### Tool not found
-
-**Solution:**
-1. List available tools: `discover_mcp_tools(mcp_config)`
-2. Verify tool name matches exactly (case-sensitive)
-3. Check MCP server has the tool registered
-
-## Related Documentation
-
-**In this directory:**
-- `TOOL_DISCOVERY_GUIDE.md` - Comprehensive tool discovery system documentation
-- `TOOL_MCP_COMBINATION_GUIDE.md` - Why and how to combine tool and MCP descriptions
-- `MCP_WATCHER_SUMMARY.md` - Complete implementation guide
-- `MCP_WATCHER_ARCHITECTURE.md` - System architecture diagrams
-- `MCP_WATCHER_QUICKREF.md` - Quick reference guide
-- `MCP_WATCHER_MIGRATION.md` - Migration guide for existing tools
-
-**Other modules:**
-- `../urls/daemons/README.md` - URL daemons overview
-
-## Contributing
-
-When adding new MCP-related functionality:
-
-1. Add core logic to appropriate module (`client.py`, `discovery.py`, `models.py`)
-2. Export new functions/classes in `__init__.py`
-3. Update this README with usage examples
-4. Add tests for new functionality
-5. Update related documentation
-
-## Future Enhancements
-
-- [ ] Add caching layer for discovered tools
-- [ ] Support WebSocket transport for MCP
-- [ ] Add health check utilities
-- [ ] Implement tool versioning
-- [ ] Add MCP server discovery (auto-find MCP servers on network)
-- [ ] Support batch tool invocation
-- [ ] Add metrics/monitoring hooks
+**Tool not found**  
+List available tools with `discover_mcp_tools(mcp_config)` and verify the name matches exactly (case-sensitive).

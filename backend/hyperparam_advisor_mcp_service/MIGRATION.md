@@ -30,7 +30,7 @@ hyperparam_advisor_mcp_service:
   build: ./backend/hyperparam_advisor_mcp_service
   restart: unless-stopped
   ports:
-    - "5001:5001"
+    - "5020:5020"
   environment:
     - PYTHONUNBUFFERED=1
     - DATABASE_URL=postgresql+psycopg://${AK_POSTGRES_USER}:${AK_POSTGRES_PASSWORD}@postgres:5432/${AK_POSTGRES_DB}
@@ -48,7 +48,7 @@ hyperparam_advisor_mcp_service:
 - Added to services table in main README
 
 ## Port Allocation
-- **Port 5001**: HTTP/stdio MCP server for hyperparameter optimization tools
+- **Port 5020**: stdio MCP server for hyperparameter optimization tools
 
 ## Environment Variables Required
 - `DATABASE_URL`: PostgreSQL connection string with pgvector support

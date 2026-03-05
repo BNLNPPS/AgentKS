@@ -389,8 +389,8 @@ You can freely mix numeric and categorical constraints:
 ### Standalone
 
 ```bash
-cd backend/backend_app/hyperparam_advisor_mcp
-python server.py
+cd backend/hyperparam_advisor_mcp_service
+python main.py
 ```
 
 ### With MCP Watcher
@@ -423,7 +423,7 @@ The MCP server integrates with the RAG system:
 
 ### Environment Variables
 
-- `RAG_INJECTOR_URL`: URL of RAG injector service (default: `http://localhost:5001`)
+- `RAG_INJECTOR_URL`: URL of RAG injector service (default: `http://rag_mcp_service:5001`)
 - `HYPERPARAM_RAG_GROUP`: RAG group name for hyperparameter data (default: `hyperparameter-optimization`)
 - `RAG_EMBED_MODEL`: Embedding model to use (default: `nomic-embed-text`)
 - `USE_LLM_ANALYSIS`: Enable LLM-based analysis for suggestions (default: `true`)

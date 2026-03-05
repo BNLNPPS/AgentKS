@@ -486,7 +486,7 @@ docker compose exec backend supervisorctl tail -f mcp_watcher
 
 Verify basic_tools_mcp_service is running:
 ```bash
-curl http://localhost:5000/health
+curl http://localhost:5010/health
 ```
 
 ### Agent not using tools

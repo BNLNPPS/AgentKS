@@ -88,7 +88,7 @@ services:
     restart: unless-stopped
     environment:
       AUTHENTIK_HOST: http://authentik_server:9000
-      AUTHENTIK_HOST_BROWSER: https://${AUTH_DOMAIN}
+      AUTHENTIK_HOST_BROWSER: https://${DOMAIN}
       AUTHENTIK_TOKEN: ${AUTHENTIK_OUTPOST_TOKEN}
     depends_on:
       authentik_server:
