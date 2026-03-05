@@ -472,7 +472,7 @@ pip install langchain-mcp-adapters
 - `MCP_WATCHER_MIGRATION.md` - Migration guide for existing tools
 
 **Other modules:**
-- `../rag/daemons/README.md` - RAG daemons overview
+- `../urls/daemons/README.md` - URL daemons overview
 
 ## Contributing
 

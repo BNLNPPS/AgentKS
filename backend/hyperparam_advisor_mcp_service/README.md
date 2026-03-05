@@ -411,7 +411,7 @@ VALUES ('hyperparam-advisor', 'stdio:///path/to/server.py', true, 'stdio');
 
 The MCP server integrates with the RAG system:
 
-- **Injection**: Formats hyperparameter results as text documents and stores in RAG via the injector API (HTTP POST to port 4002)
+- **Injection**: Formats hyperparameter results as text documents and stores in RAG via the injector API (HTTP POST to port 5001)
   - Automatically creates RAG group if it doesn't exist
   - Handles duplicates gracefully
   - Supports both private (user-specific) and global (shared) scopes
@@ -423,7 +423,7 @@ The MCP server integrates with the RAG system:
 
 ### Environment Variables
 
-- `RAG_INJECTOR_URL`: URL of RAG injector service (default: `http://localhost:4002`)
+- `RAG_INJECTOR_URL`: URL of RAG injector service (default: `http://localhost:5001`)
 - `HYPERPARAM_RAG_GROUP`: RAG group name for hyperparameter data (default: `hyperparameter-optimization`)
 - `RAG_EMBED_MODEL`: Embedding model to use (default: `nomic-embed-text`)
 - `USE_LLM_ANALYSIS`: Enable LLM-based analysis for suggestions (default: `true`)

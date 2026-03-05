@@ -21,6 +21,8 @@ services:
     # Use the pgvector-enabled Postgres image so the `vector` extension is available
     image: pgvector/pgvector:pg16
     restart: unless-stopped
+    ports:
+      - "${AK_POSTGRES_PORT:-5433}:5432"  # Map host port (default 5433) to container port 5432
     environment:
       POSTGRES_DB: ${AK_POSTGRES_DB}
       POSTGRES_USER: ${AK_POSTGRES_USER}
@@ -103,7 +105,7 @@ services:
       WEBUI_AUTH_TRUSTED_NAME_HEADER: X-Authentik-Name
       WEBUI_AUTH_TRUSTED_GROUPS_HEADER: X-Authentik-Groups
       # PostgreSQL database configuration
-      DATABASE_URL: postgresql://${AK_POSTGRES_USER}:${AK_POSTGRES_PASSWORD}@postgres:5432/${OPENWEBUI_POSTGRES_DB:-openwebui}
+      DATABASE_URL: postgresql://${AK_POSTGRES_USER}:${AK_POSTGRES_PASSWORD}@postgres:${AK_POSTGRES_PORT:-5433}/${OPENWEBUI_POSTGRES_DB:-openwebui}
     volumes:
       - openwebui_data:/app/backend/data
     depends_on:
@@ -145,7 +147,7 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     ports:
-      - "5000:5000"
+      - "5010:5010"
     environment:
       - PYTHONUNBUFFERED=1
       - SEARXNG_URL=http://searxng:8080
@@ -154,7 +156,7 @@ services:
       - ARXIV_API_URL=http://export.arxiv.org/api/query
     depends_on:
       - searxng
-    # MCP server using SSE/HTTP transport on port 5000
+    # MCP server using SSE/HTTP transport on port 5010
 
   hyperparam_advisor_mcp_service:
     build:
@@ -165,30 +167,48 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     ports:
-      - "5001:5001"
+      - "5020:5020"
     environment:
       - PYTHONUNBUFFERED=1
-      # PostgreSQL connection for RAG vector store
-      - DATABASE_URL=postgresql+psycopg://${AK_POSTGRES_USER}:${AK_POSTGRES_PASSWORD}@postgres:5432/${AK_POSTGRES_DB}
       # Ollama for embeddings and LLM
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_CHAT_MODEL=llama2:7b
       - OLLAMA_EMBED_MODEL=nomic-embed-text
-      # RAG collection names
-      - COLLECTION_DOCS=kb_docs
-      - COLLECTION_TOOLS=tool_catalog
       # Integration with other services
       - LLM_API_URL=http://backend:4000/v1/chat/completions
-      - RAG_INJECTOR_URL=http://backend:4002
-      - RAG_MCP_URL=http://backend:4001
+      - RAG_INJECTOR_URL=http://rag_mcp_service:5001
+      - RAG_MCP_URL=http://rag_mcp_service:5000
+      - COLLECTION_DOCS=kb_docs
+    depends_on:
+      ollama:
+        condition: service_started
+      rag_mcp_service:
+        condition: service_started
+    # MCP server for hyperparameter optimization using stdio transport
+
+  rag_mcp_service:
+    build:
+      context: ./backend/rag_mcp_service
+      network: host
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "5000:5000"  # RAG MCP server (SSE)
+      - "5001:5001"  # RAG Injector REST API
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+psycopg://${AK_POSTGRES_USER}:${AK_POSTGRES_PASSWORD}@postgres:${AK_POSTGRES_PORT:-5433}/${AK_POSTGRES_DB}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_EMBED_MODEL=nomic-embed-text
+      - COLLECTION_DOCS=kb_docs
     depends_on:
       postgres:
         condition: service_healthy
       ollama:
         condition: service_started
-      backend:
-        condition: service_started
-    # MCP server for hyperparameter optimization with RAG support using stdio transport
+    # RAG MCP (port 5000) + RAG Injector REST API (port 5001), managed by supervisord
 
   backend:
     build:
@@ -200,7 +220,7 @@ services:
     environment:
       # Use the root-level postgres service (repo root docker-compose.yml)
       # Ensure AK_POSTGRES_* vars are set in the parent .env
-      DATABASE_URL: postgresql+psycopg://${AK_POSTGRES_USER}:${AK_POSTGRES_PASSWORD}@postgres:5432/${AK_POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg://${AK_POSTGRES_USER}:${AK_POSTGRES_PASSWORD}@postgres:${AK_POSTGRES_PORT:-5433}/${AK_POSTGRES_DB}
       COLLECTION_DOCS: kb_docs
       COLLECTION_TOOLS: tool_catalog
 
@@ -213,6 +233,9 @@ services:
       INSPIRE_BASE_URL: https://inspirehep.net
       ARXIV_API_URL: http://export.arxiv.org/api/query
 
+      RAG_INJECTOR_URL: http://rag_mcp_service:5001
+      RAG_MCP_URL: http://rag_mcp_service:5000
+
       TOOL_SELECT_TOPK: "6"
       FETCH_TIMEOUT_SECONDS: "25"
       MAX_CHARS_PER_DOC: "250000"
@@ -220,13 +243,13 @@ services:
     ports:
       - "8000:8000"
       - "4000:4000"
-      - "4001:4001"
-      - "4002:4002"
     depends_on:
       - postgres
       - ollama
       - searxng
-    # Backend with web (8000), app (4000), rag_mcp (4001), and rag_injector (4002) managed by supervisord
+      - rag_mcp_service
+    # Backend with web (8000) and app API (4000) managed by supervisord
+    # RAG operations (5000/5001) are handled by rag_mcp_service
 
   # The backend docker-compose included an openwebui service too; the root
   # stack already defines `openwebui`. If you prefer the backend's image/vars

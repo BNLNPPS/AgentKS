@@ -732,7 +732,7 @@ if __name__ == "__main__":
             }
         })
     
-    # Run FastMCP server with SSE transport on port 5000
-    logger.info("Starting FastMCP server on http://0.0.0.0:5000")
-    logger.info("Discovery endpoint: http://0.0.0.0:5000/.well-known/mcp")
-    mcp.run(transport="sse", port=5000, host="0.0.0.0")
+    # Run FastMCP server with SSE transport on port 5010
+    logger.info("Starting FastMCP server on http://0.0.0.0:5010")
+    logger.info("Discovery endpoint: http://0.0.0.0:5010/.well-known/mcp")
+    mcp.run(transport="sse", port=5010, host="0.0.0.0")

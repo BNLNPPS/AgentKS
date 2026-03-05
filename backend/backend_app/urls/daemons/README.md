@@ -379,10 +379,10 @@ autorestart=true
 **Manual run (for testing):**
 ```bash
 # From backend_app directory
-python -m rag.daemons.url_watcher
+python -m urls.daemons.url_watcher
 
 # Or with custom config
-SLEEP_SECONDS=10 BATCH_SIZE=5 python -m rag.daemons.url_watcher
+SLEEP_SECONDS=10 BATCH_SIZE=5 python -m urls.daemons.url_watcher
 ```
 
 ### Monitoring
@@ -423,8 +423,8 @@ ORDER BY last_fetched_at;
 The daemon works seamlessly with other RAG services:
 
 1. **rag_common**: Uses shared embeddings and database utilities
-2. **rag_injector** (port 4002): Could also be used for manual injection
-3. **rag_mcp** (port 4001): Users query the injected documents
+2. **rag_injector** (port 5001): Could also be used for manual injection
+3. **rag_mcp** (port 5000): Users query the injected documents
 
 ### Content Processing
 

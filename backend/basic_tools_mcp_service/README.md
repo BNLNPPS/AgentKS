@@ -8,7 +8,7 @@ Built with FastMCP using SSE (Server-Sent Events) transport over HTTP.
 ## Features
 
 - **Protocol Compliant**: Uses FastMCP for proper MCP JSON-RPC 2.0 protocol
-- **HTTP/SSE Transport**: Accessible via HTTP with streaming support (port 4001)
+- **HTTP/SSE Transport**: Accessible via HTTP with streaming support (port 5010)
 - **Type-Safe Tools**: Python type hints automatically generate tool schemas
 - **LangChain Community Integration**: Uses maintained, feature-rich tools from langchain-community
 - **Search & Research Tools**:
@@ -44,7 +44,7 @@ docker compose up -d basic_tools_mcp_service
 # Check logs
 docker compose logs -f basic_tools_mcp_service
 
-# Server will be available at http://localhost:4001
+# Server will be available at http://localhost:5010
 ```
 
 ### Local Development
@@ -57,7 +57,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Server runs at http://localhost:4001
+Server runs at http://localhost:5010
 
 ## API Endpoints
 
@@ -87,7 +87,7 @@ The MCP server provides rich metadata and context through MCP resources and prom
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
-async with sse_client("http://localhost:4001/sse") as (read, write):
+async with sse_client("http://localhost:5010/sse") as (read, write):
     async with ClientSession(read, write) as session:
         await session.initialize()
         
@@ -107,7 +107,7 @@ The admin UI can automatically discover this MCP server:
 
 **Steps**:
 1. Navigate to: Admin UI → MCPs → Add MCP
-2. Enter endpoint: `http://basic_tools_mcp_service:4001` (or `http://localhost:4001` for local)
+2. Enter endpoint: `http://basic_tools_mcp_service:5010` (or `http://localhost:5010` for local)
 3. Click "Discover" button
 4. Server metadata auto-fills the form
 
@@ -148,7 +148,7 @@ The admin UI can automatically discover this MCP server:
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
-async with sse_client("http://localhost:4001/sse") as (read, write):
+async with sse_client("http://localhost:5010/sse") as (read, write):
     async with ClientSession(read, write) as session:
         await session.initialize()
         
@@ -168,7 +168,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 client = MultiServerMCPClient({
     "basic-tools": {
         "transport": "sse",
-        "url": "http://basic_tools_mcp_service:4001/sse"
+        "url": "http://basic_tools_mcp_service:5010/sse"
     }
 })
 
@@ -179,7 +179,7 @@ result = await tools[0].ainvoke({"a": 5, "b": 3})
 ### Admin UI Discovery
 
 The admin UI can discover this MCP server:
-1. Enter endpoint: `http://basic_tools_mcp_service:4001` (or `http://localhost:4001` for local)
+1. Enter endpoint: `http://basic_tools_mcp_service:5010` (or `http://localhost:5010` for local)
 2. Click "Discover"
 3. Server metadata will be auto-filled
 
@@ -310,6 +310,6 @@ FastMCP automatically:
 
 - **Transport**: SSE (Server-Sent Events) over HTTP
 - **Format**: MCP JSON-RPC 2.0
-- **Port**: 4001
+- **Port**: 5010
 - **Streaming**: Supported via SSE
 - **Compatible with**: MCP clients, web browsers, standard HTTP tools

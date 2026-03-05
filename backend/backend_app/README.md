@@ -20,8 +20,8 @@ backend_app/
 │   └── static/           # CSS, JS assets
 │
 ├── rag/                  # RAG services
-│   ├── rag_mcp/          # MCP server for RAG retrieval (port 4001)
-│   ├── rag_injector/     # REST API for document injection (port 4002)
+│   ├── rag_mcp/          # MCP server for RAG retrieval (now in rag_mcp_service, port 5000)
+│   ├── rag_injector/     # REST API for document injection (now in rag_mcp_service, port 5001)
 │   ├── rag_common.py     # Shared embeddings and DB utilities
 │   └── daemons/          # Background daemons (URL watcher)
 │
@@ -54,8 +54,10 @@ backend_app/
 **Service Ports:**
 - 8000: Admin Web UI
 - 4000: Agent Backend API (OpenAI-compatible)
-- 4001: RAG MCP Server
-- 4002: RAG Injection REST API
+- 5000: RAG MCP Server (rag_mcp_service)
+- 5001: RAG Injection REST API (rag_mcp_service)
+- 5010: Basic Tools MCP Server (basic_tools_mcp_service)
+- 5020: Hyperparam Advisor MCP Server (hyperparam_advisor_mcp_service)
 
 **Key Features:**
 - All tools managed via MCP services (basic_tools_mcp_service, hyperparam_advisor_mcp_service)
@@ -91,8 +93,6 @@ docker build -t agentks-backend ./backend/backend_app
 docker run --rm \
   -p 8000:8000 \
   -p 4000:4000 \
-  -p 4001:4001 \
-  -p 4002:4002 \
   --env-file .env \
   agentks-backend
 ```
@@ -100,8 +100,6 @@ docker run --rm \
 **Direct Access:**
 - http://localhost:8000/admin (Admin UI)
 - http://localhost:4000/v1/models (Agent API)
-- http://localhost:4001 (RAG MCP - MCP client only)
-- http://localhost:4002/health (RAG Injection API)
 
 ## Container Startup Process
 
@@ -115,8 +113,6 @@ The `startup.sh` script orchestrates initialization:
 2. **Supervisord Launch** - Starts all services in parallel:
    - `uvicorn admin.main:app --host 0.0.0.0 --port 8000` (Admin UI)
    - `uvicorn agents.main:app --host 0.0.0.0 --port 4000` (Agent Backend)
-   - `python -u rag/rag_mcp/main.py` (RAG MCP Server, port 4001)
-   - `uvicorn rag.rag_injector.main:app --host 0.0.0.0 --port 4002` (RAG Injector)
    - `python -u tools/watcher.py` (mcp_watcher daemon - tool discovery)
 
 See `supervisord.conf` for full configuration.
@@ -134,12 +130,12 @@ curl http://localhost:8000/admin/api/health
 curl http://localhost:4000/v1/models
 # Response: {"object": "list", "data": [...]}
 
-# RAG Injection health
-curl http://localhost:4002/health
+# RAG Injection health (rag_mcp_service container)
+curl http://localhost:5001/health
 # Response: {"status": "healthy"}
 
-# RAG MCP (requires MCP client)
-# Connect via SSE/HTTP on port 4001
+# RAG MCP (requires MCP client, rag_mcp_service container)
+# Connect via SSE/HTTP on port 5000
 ```
 
 ### Main API Endpoints (port 4000)
@@ -223,8 +219,9 @@ OLLAMA_EMBED_MODEL=nomic-embed-text
 COLLECTION_DOCS=kb_docs
 COLLECTION_TOOLS=tool_catalog
 
-# RAG MCP Service
-RAG_MCP_URL=http://localhost:4002/mcp
+# RAG MCP Service (rag_mcp_service container)
+RAG_INJECTOR_URL=http://localhost:5001
+RAG_MCP_URL=http://localhost:5000
 
 # Tool Discovery
 TOOL_SELECT_TOPK=6
@@ -296,18 +293,12 @@ tools/
 
 ### RAG Services (`rag/`)
 
+> RAG services have been extracted to the dedicated `rag_mcp_service` container
+> (port 5000 for MCP SSE, port 5001 for Injector REST API).
+> The `rag/` directory in `backend_app` contains only the URL-watcher daemon.
+
 ```
 rag/
-├── rag_mcp/           # MCP server (port 4001)
-│   └── main.py        # RAG retrieval MCP service
-│
-├── rag_injector/      # REST API (port 4002)
-│   └── main.py        # Document injection endpoints
-│
-├── rag_common.py      # Shared utilities
-│                       # - Embeddings (Ollama)
-│                       # - Database operations
-│
 └── daemons/           # Background daemons
     └── url_watcher.py # URL monitoring daemon
 ```
@@ -451,13 +442,10 @@ See `/docs/architecture/AGENT_FLOW.md` for detailed architecture documentation.
 
 All tools and RAG operations go through MCP services:
 
-**External Services:**
-- `basic_tools_mcp_service` (port 5000) - Search tools (arXiv, CDS, INSPIRE-HEP, SearXNG)
-- `hyperparam_advisor_mcp_service` (port 5001) - ML hyperparameter optimization with RAG
-
-**Internal Services:**
-- RAG MCP (port 4001) - Document retrieval
-- RAG Injector (port 4002) - Document ingestion
+**External MCP Services:**
+- `rag_mcp_service` (port 5000 MCP, port 5001 REST) - RAG retrieval and document injection
+- `basic_tools_mcp_service` (port 5010) - Search tools (arXiv, CDS, INSPIRE-HEP, SearXNG)
+- `hyperparam_advisor_mcp_service` (port 5020) - ML hyperparameter optimization with RAG
 
 **Auto-Discovery:**
 - `mcp_watcher` daemon automatically discovers MCP tools
@@ -518,12 +506,12 @@ curl -X POST http://localhost:4000/api/tools-skill/discover \
 
 Check RAG MCP service:
 ```bash
-curl http://localhost:4001/sse/tools/list
+curl http://localhost:5000/sse/tools/list
 ```
 
 Verify documents are ingested:
 ```bash
-curl http://localhost:4002/health
+curl http://localhost:5001/health
 ```
 
 ## Production Deployment

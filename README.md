@@ -5,7 +5,7 @@
 > This is a **DRAFT VERSION** - features, APIs, and configurations may change without notice.  
 > Not recommended for production use at this time.
 
-AgentKS is a production-ready agentic RAG (Retrieval-Augmented Generation) knowledge stack orchestrated with Docker Compose, featuring LangGraph-based multi-skill agent execution, MCP (Model Context Protocol) services, and enterprise authentication.
+AgentKS is an agentic RAG (Retrieval-Augmented Generation) knowledge stack under active development, orchestrated with Docker Compose and featuring LangGraph-based multi-skill agent execution, MCP (Model Context Protocol) services, and enterprise authentication. **Not production-ready.**
 
 ## 🎯 Key Features
 
@@ -47,7 +47,7 @@ AgentKS is a production-ready agentic RAG (Retrieval-Augmented Generation) knowl
      │         │                  │
      │    ┌────▼─────┐      ┌────▼───────────┐
      │    │ RAG MCP  │      │  Tools MCP     │
-     │    │  :4001   │      │   :5000        │
+     │    │  :5000   │      │   :5010        │
      │    │          │      │  - arXiv       │
      │    │PGVector  │      │  - CDS         │
      │    │Search    │      │  - INSPIRE     │
@@ -55,7 +55,7 @@ AgentKS is a production-ready agentic RAG (Retrieval-Augmented Generation) knowl
      │                      └────────────────┘
      │                      ┌────────────────┐
      │                      │ Hyperparam MCP │
-     │                      │   :5001        │
+     │                      │   :5020        │
      │                      │  - RAG-based   │
      │                      │  - Optimization│
      │                      └────────────────┘
@@ -81,13 +81,14 @@ AgentKS/
 │   ├── backend_app/           # Main application
 │   │   ├── agents/            # Agent backend (:4000)
 │   │   ├── admin/             # Admin UI (:8000)
-│   │   ├── rag/               # RAG services (:4001, :4002)
+│   │   ├── rag/               # RAG services (now in rag_mcp_service)
 │   │   ├── tools/             # MCP tool integration
 │   │   ├── migrations/        # Alembic DB migrations
 │   │   └── supervisord.conf   # Multi-service orchestration
 │   │
-│   ├── basic_tools_mcp_service/      # Search tools MCP (:5000)
-│   ├── hyperparam_advisor_mcp_service/ # Hyperparameter optimization MCP (:5001)
+│   ├── basic_tools_mcp_service/      # Search tools MCP (:5010)
+│   ├── hyperparam_advisor_mcp_service/ # Hyperparameter optimization MCP (:5020)
+│   ├── rag_mcp_service/              # RAG MCP + Injector (:5000, :5001)
 │   └── searxng/               # SearXNG configuration
 │
 ├── docker-compose.yml         # Full stack orchestration
@@ -156,7 +157,7 @@ This starts: Backend + Postgres + Ollama + SearXNG (no Caddy/Authentik)
 **Direct Access:**
 - Admin UI: http://localhost:8000/admin
 - Agent API: http://localhost:4000/v1/models
-- RAG Injector: http://localhost:4002/health
+- RAG Injector: http://localhost:5001/health
 
 ## 🤖 Agent Capabilities
 
@@ -243,7 +244,7 @@ POST /api/tools-skill/discover
 
 ### RAG Injector (via /rag prefix)
 
-**Note:** Caddy strips `/rag` prefix before forwarding to backend:4002
+**Note:** Caddy strips `/rag` prefix before forwarding to rag_mcp_service:5001
 
 ```bash
 # Health check
@@ -259,7 +260,7 @@ POST /rag/upload
 GET /rag/documents
 ```
 
-### Hyperparameter Advisor (port 4003, exposed as /hyperparam)
+### Hyperparameter Advisor (port 5020, exposed as /hyperparam)
 
 ```bash
 # Inject optimization results
@@ -350,9 +351,10 @@ COLLECTION_TOOLS=tool_catalog
 | 80/443 | Caddy | Public | HTTP/HTTPS ingress |
 | 8000 | Admin UI | Via Caddy | Dashboard |
 | 4000 | Agent API | Via Caddy | OpenAI-compatible API |
-| 4001 | RAG MCP | Internal | Document retrieval |
-| 4002 | RAG Injector | Internal | Document ingestion |
-| 5000 | Tools MCP | Internal | Search tools |
+| 5000 | RAG MCP | Internal | Document retrieval (SSE) |
+| 5001 | RAG Injector | Internal | Document ingestion (REST) |
+| 5010 | Tools MCP | Internal | Search tools (SSE) |
+| 5020 | Hyperparam MCP | Internal | Hyperparameter optimization (SSE) |
 | 8080 | OpenWebUI | Via Caddy | Chat interface |
 | 11434 | Ollama | Internal | LLM inference |
 
@@ -511,7 +513,7 @@ docker compose exec backend alembic upgrade head
 docker compose exec backend supervisorctl tail -f mcp_watcher
 
 # Verify basic_tools_mcp_service
-curl http://localhost:5000/health
+curl http://localhost:5010/health
 
 # Check database for registered tools
 docker compose exec postgres psql -U authentik -d authentik \
@@ -534,10 +536,10 @@ docker compose exec backend env | grep TOOL_SELECT_TOPK
 
 ```bash
 # Check RAG MCP service
-curl http://localhost:4001/sse/tools/list
+curl http://localhost:5000/sse/tools/list
 
 # Verify documents ingested
-curl http://localhost:4002/health
+curl http://localhost:5001/health
 
 # Test retrieval directly
 curl -X POST http://localhost:4000/api/rag-skill/retrieve \
@@ -600,9 +602,10 @@ docker compose exec backend supervisorctl status
 | `authentik_worker` | N/A (image) | - | Background worker |
 | `authentik_proxy` | N/A (image) | 9000 | Forward auth proxy |
 | `openwebui` | N/A (image) | 8080 | Chat interface (uses Authentik + PostgreSQL) |
-| `backend` | `backend/backend_app/` | 8000, 4000, 4001, 4002 | Multi-service backend |
-| `basic_tools_mcp_service` | `backend/basic_tools_mcp_service/` | 5000 | Search tools MCP |
-| `hyperparam_advisor_mcp_service` | `backend/hyperparam_advisor_mcp_service/` | 5001 | Hyperparameter optimization MCP |
+| `backend` | `backend/backend_app/` | 8000, 4000 | Multi-service backend |
+| `rag_mcp_service` | `backend/rag_mcp_service/` | 5000, 5001 | RAG MCP (SSE) + Injector (REST) |
+| `basic_tools_mcp_service` | `backend/basic_tools_mcp_service/` | 5010 | Search tools MCP |
+| `hyperparam_advisor_mcp_service` | `backend/hyperparam_advisor_mcp_service/` | 5020 | Hyperparameter optimization MCP |
 | `ollama` | N/A (image) | 11434 | LLM inference |
 | `searxng` | N/A (image) | 8081 | Meta search engine |
 

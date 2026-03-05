@@ -37,7 +37,7 @@ hyperparam_advisor_mcp_service:
     - OLLAMA_BASE_URL=http://ollama:11434
     - OLLAMA_EMBED_MODEL=nomic-embed-text
     - LLM_API_URL=http://backend:4000/v1/chat/completions
-    - RAG_INJECTOR_URL=http://backend:4002
+    - RAG_INJECTOR_URL=http://rag_mcp_service:5001
   depends_on:
     - postgres
 ```

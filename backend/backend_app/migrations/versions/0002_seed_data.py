@@ -15,36 +15,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Idempotent seed data for dev / demo purposes
+    # Idempotent seed data for dev / demo purposes.
+    # Note: rag_groups, rag_group_urls, rag_documents seed is in rag_mcp_service 0002_rag_seed.py.
     op.execute('''
-INSERT INTO rag_groups (id,name,scope,owner,description,embed_model,doc_count)
-VALUES
-  ('rg_global','global','global','', 'Global public collection','nomic-embed-text',2)
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO rag_groups (id,name,scope,owner,description,embed_model,doc_count)
-VALUES
-  ('rg_private_user123','private:user123','private','user123','Private collection for user123','nomic-embed-text',1)
-ON CONFLICT (id) DO NOTHING;
-
 INSERT INTO urls (id,url,scope,tags,status)
 VALUES
   ('u1','https://example.com/doc1','global','["physics","note"]','ingested'),
   ('u2','https://example.com/doc2','private','["personal"]','queued')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO rag_group_urls (rag_group_id,url_id)
-VALUES
-  ('rg_global','u1'),
-  ('rg_global','u2'),
-  ('rg_private_user123','u2')
-ON CONFLICT (rag_group_id,url_id) DO NOTHING;
-
-INSERT INTO rag_documents (id,rag_group_id,url_id,title,content,content_hash,metadata)
-VALUES
-  ('d1','rg_global','u1','Doc 1','This is example content for doc1.','hash1','{"source":"example.com"}'),
-  ('d2','rg_global','u2','Doc 2','Example content for doc2.','hash2','{"source":"example.com"}'),
-  ('d3','rg_private_user123','u2','Private Doc','Private content sample.','hash3','{"owner":"user123"}')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO mcps (id,name,endpoint,kind,metadata,tags,status)
@@ -60,12 +37,10 @@ ON CONFLICT (id) DO NOTHING;
 
 
 def downgrade() -> None:
-    # Remove seeded rows (safe for demo data)
+    # Remove seeded rows (safe for demo data).
+    # Note: rag seed rows are removed by rag_mcp_service 0002_rag_seed.py downgrade.
     op.execute('''
 DELETE FROM tools WHERE id IN ('t1');
 DELETE FROM mcps WHERE id IN ('m1');
-DELETE FROM rag_documents WHERE id IN ('d1','d2','d3');
-DELETE FROM rag_group_urls WHERE (rag_group_id,url_id) IN (('rg_global','u1'),('rg_global','u2'),('rg_private_user123','u2'));
 DELETE FROM urls WHERE id IN ('u1','u2');
-DELETE FROM rag_groups WHERE id IN ('rg_global','rg_private_user123');
 ''')

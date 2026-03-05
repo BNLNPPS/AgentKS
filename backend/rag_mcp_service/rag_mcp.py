@@ -10,23 +10,17 @@ import logging
 import json
 from typing import Dict, Any, List, Optional
 from mcp.server.fastmcp import FastMCP
-import psycopg
 
-# Import common RAG utilities
-import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+# DB layer
+import db.rag_groups as rg
+import db.rag_documents as rd
+from db.connection import db_exec
+
+# Common config + vector-store helpers
 from rag_common import (
-    DATABASE_URL, OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, COLLECTION_DOCS, PG_DSN,
-    LANGCHAIN_AVAILABLE, get_embeddings_for_model, get_vector_store_for_model,
-    db_exec, get_rag_group_by_name, get_rag_group_embed_model
+    OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, COLLECTION_DOCS,
+    LANGCHAIN_AVAILABLE, get_vector_store_for_model,
 )
-
-# LangChain imports for type hints
-try:
-    from langchain_ollama import OllamaEmbeddings
-    from langchain_postgres import PGVector
-except ImportError:
-    pass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,12 +33,10 @@ mcp = FastMCP(
 
 # Initialize default embeddings and vector store using common module
 if LANGCHAIN_AVAILABLE:
-    default_embeddings = get_embeddings_for_model(OLLAMA_EMBED_MODEL)
     default_vector_store = get_vector_store_for_model(OLLAMA_EMBED_MODEL)
     logger.info(f"✓ Default vector store initialized: {COLLECTION_DOCS} with model: {OLLAMA_EMBED_MODEL}")
 else:
     logger.warning(f"⚠ LangChain not available")
-    default_embeddings = None
     default_vector_store = None
 
 
@@ -71,71 +63,37 @@ def server_info():
 @mcp.resource("rag://metadata")
 def rag_metadata():
     """Returns metadata about the RAG knowledge base."""
-    with psycopg.connect(PG_DSN) as conn:
-        with conn.cursor() as cur:
-            # Get RAG groups count
-            cur.execute("SELECT COUNT(*) FROM rag_groups")
-            groups_count = cur.fetchone()[0]
-            
-            # Get total documents count
-            cur.execute("SELECT COUNT(*) FROM rag_documents")
-            docs_count = cur.fetchone()[0]
-            
-            # Get groups with doc counts
-            cur.execute("""
-                SELECT name, scope, doc_count, description, embed_model
-                FROM rag_groups
-                ORDER BY doc_count DESC
-                LIMIT 10
-            """)
-            top_groups = cur.fetchall()
-    
+    groups_count_rows = db_exec("SELECT COUNT(*) FROM rag_groups")
+    groups_count = groups_count_rows[0][0] if groups_count_rows else 0
+    docs_count = rd.count_all_documents()
+    top_groups = db_exec("""
+        SELECT name, scope, doc_count, description, embed_model
+        FROM rag_groups ORDER BY doc_count DESC LIMIT 10
+    """) or []
     return json.dumps({
         "total_groups": groups_count,
         "total_documents": docs_count,
         "collection_name": COLLECTION_DOCS,
         "embed_model": OLLAMA_EMBED_MODEL,
         "top_groups": [
-            {
-                "name": g[0],
-                "scope": g[1],
-                "doc_count": g[2],
-                "description": g[3],
-                "embed_model": g[4]
-            }
+            {"name": g[0], "scope": g[1], "doc_count": g[2],
+             "description": g[3], "embed_model": g[4]}
             for g in top_groups
-        ]
+        ],
     }, indent=2)
 
 
 @mcp.resource("rag://groups")
 def rag_groups_list():
     """Returns list of all RAG groups."""
-    with psycopg.connect(PG_DSN) as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, name, scope, owner, description, embed_model, 
-                       doc_count, created_at, updated_at
-                FROM rag_groups
-                ORDER BY name
-            """)
-            groups = cur.fetchall()
-    
+    rows = rg.list_all_rag_groups()
     return json.dumps({
         "groups": [
-            {
-                "id": g[0],
-                "name": g[1],
-                "scope": g[2],
-                "owner": g[3],
-                "description": g[4],
-                "embed_model": g[5],
-                "doc_count": g[6],
-                "created_at": str(g[7]),
-                "updated_at": str(g[8])
-            }
-            for g in groups
-        ]
+            {"id": g[0], "name": g[1], "scope": g[2], "owner": g[3],
+             "description": g[4], "embed_model": g[5], "doc_count": g[6],
+             "created_at": str(g[7]), "updated_at": str(g[8])}
+            for g in rows
+        ],
     }, indent=2)
 
 
@@ -181,22 +139,13 @@ def rag_search(
         embed_model = OLLAMA_EMBED_MODEL  # default
         
         if rag_group:
-            # Get the embedding model for this RAG group
-            with psycopg.connect(PG_DSN) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT embed_model FROM rag_groups WHERE name = %s",
-                        (rag_group,)
-                    )
-                    row = cur.fetchone()
-                    if row and row[0]:
-                        embed_model = row[0]
-                        logger.info(f"Using embedding model '{embed_model}' for RAG group '{rag_group}'")
-                    elif not row:
-                        return json.dumps({
-                            "error": "RAG group not found",
-                            "message": f"No RAG group named '{rag_group}'"
-                        })
+            # Get the embedding model for this RAG group via db layer
+            group_row = rg.get_rag_group(rag_group)
+            if not group_row:
+                return json.dumps({"error": "RAG group not found",
+                                   "message": f"No RAG group named '{rag_group}'"})
+            embed_model = group_row[5] or OLLAMA_EMBED_MODEL
+            logger.info(f"Using embedding model '{embed_model}' for RAG group '{rag_group}'")
         else:
             # Warn when searching across all groups without specifying one
             logger.warning(
@@ -275,8 +224,7 @@ def rag_query(
         # Limit to reasonable range
         limit = max(1, min(limit, 50))
         
-        # Build query
-        query = """
+        query_sql = """
             SELECT d.id, d.title, d.content, d.metadata, d.created_at,
                    g.name as rag_group_name, g.scope
             FROM rag_documents d
@@ -284,27 +232,18 @@ def rag_query(
             WHERE 1=1
         """
         params = []
-        
         if rag_group:
-            query += " AND g.name = %s"
+            query_sql += " AND g.name = %s"
             params.append(rag_group)
-        
         if title_pattern:
-            query += " AND d.title ILIKE %s"
+            query_sql += " AND d.title ILIKE %s"
             params.append(title_pattern)
-        
         if content_pattern:
-            query += " AND d.content ILIKE %s"
+            query_sql += " AND d.content ILIKE %s"
             params.append(content_pattern)
-        
-        query += " ORDER BY d.created_at DESC LIMIT %s"
+        query_sql += " ORDER BY d.created_at DESC LIMIT %s"
         params.append(limit)
-        
-        # Execute query
-        with psycopg.connect(PG_DSN) as conn:
-            with conn.cursor() as cur:
-                cur.execute(query, tuple(params))
-                rows = cur.fetchall()
+        rows = db_exec(query_sql, tuple(params)) or []
         
         results = []
         for row in rows:
@@ -350,41 +289,24 @@ def rag_get_document(document_id: str) -> str:
         JSON string with document details
     """
     try:
-        with psycopg.connect(PG_DSN) as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT d.id, d.title, d.content, d.content_hash, d.metadata,
-                           d.created_at, d.updated_at, d.url_id,
-                           g.name as rag_group_name, g.scope, g.description,
-                           u.url as source_url
-                    FROM rag_documents d
-                    JOIN rag_groups g ON d.rag_group_id = g.id
-                    LEFT JOIN urls u ON d.url_id = u.id
-                    WHERE d.id = %s
-                """, (document_id,))
-                row = cur.fetchone()
+        rows = db_exec("""
+            SELECT d.id, d.title, d.content, d.content_hash, d.metadata,
+                   d.created_at, d.updated_at, d.url_id,
+                   g.name, g.scope, g.description
+            FROM rag_documents d
+            JOIN rag_groups g ON d.rag_group_id = g.id
+            WHERE d.id = %s
+        """, (document_id,))
         
-        if not row:
-            return json.dumps({
-                "error": "Document not found",
-                "document_id": document_id
-            })
+        if not rows:
+            return json.dumps({"error": "Document not found", "document_id": document_id})
         
+        row = rows[0]
         return json.dumps({
-            "id": row[0],
-            "title": row[1],
-            "content": row[2],
-            "content_hash": row[3],
-            "metadata": row[4],
-            "created_at": str(row[5]),
-            "updated_at": str(row[6]),
-            "url_id": row[7],
-            "rag_group": {
-                "name": row[8],
-                "scope": row[9],
-                "description": row[10]
-            },
-            "source_url": row[11]
+            "id": row[0], "title": row[1], "content": row[2],
+            "content_hash": row[3], "metadata": row[4],
+            "created_at": str(row[5]), "updated_at": str(row[6]), "url_id": row[7],
+            "rag_group": {"name": row[8], "scope": row[9], "description": row[10]},
         }, indent=2)
         
     except Exception as e:
@@ -410,45 +332,15 @@ def rag_list_groups(scope: str = "global", owner: str = None) -> str:
         JSON string with list of RAG groups
     """
     try:
-        query = """
-            SELECT id, name, scope, owner, description, embed_model,
-                   doc_count, created_at, updated_at
-            FROM rag_groups
-            WHERE scope = %s
-        """
-        params = [scope]
-        
-        if owner:
-            query += " AND owner = %s"
-            params.append(owner)
-        
-        query += " ORDER BY name"
-        
-        with psycopg.connect(PG_DSN) as conn:
-            with conn.cursor() as cur:
-                cur.execute(query, tuple(params))
-                rows = cur.fetchall()
-        
-        groups = []
-        for row in rows:
-            groups.append({
-                "id": row[0],
-                "name": row[1],
-                "scope": row[2],
-                "owner": row[3],
-                "description": row[4],
-                "embed_model": row[5],
-                "doc_count": row[6],
-                "created_at": str(row[7]),
-                "updated_at": str(row[8])
-            })
-        
-        return json.dumps({
-            "num_groups": len(groups),
-            "scope": scope,
-            "owner": owner,
-            "groups": groups
-        }, indent=2)
+        rows = rg.list_rag_groups(scope=scope, owner=owner)
+        groups = [
+            {"id": r[0], "name": r[1], "scope": r[2], "owner": r[3],
+             "description": r[4], "embed_model": r[5], "doc_count": r[6],
+             "created_at": str(r[7]), "updated_at": str(r[8])}
+            for r in rows
+        ]
+        return json.dumps({"num_groups": len(groups), "scope": scope,
+                           "owner": owner, "groups": groups}, indent=2)
         
     except Exception as e:
         logger.error(f"List groups error: {e}", exc_info=True)
@@ -475,54 +367,30 @@ def rag_get_group_documents(rag_group_name: str, limit: int = 20) -> str:
     try:
         limit = max(1, min(limit, 100))
         
-        with psycopg.connect(PG_DSN) as conn:
-            with conn.cursor() as cur:
-                # Get group info
-                cur.execute("""
-                    SELECT id, name, scope, description, doc_count
-                    FROM rag_groups
-                    WHERE name = %s
-                """, (rag_group_name,))
-                group_row = cur.fetchone()
-                
-                if not group_row:
-                    return json.dumps({
-                        "error": "RAG group not found",
-                        "rag_group_name": rag_group_name
-                    })
-                
-                # Get documents
-                cur.execute("""
-                    SELECT d.id, d.title, d.content, d.metadata, d.created_at, u.url
-                    FROM rag_documents d
-                    LEFT JOIN urls u ON d.url_id = u.id
-                    WHERE d.rag_group_id = %s
-                    ORDER BY d.created_at DESC
-                    LIMIT %s
-                """, (group_row[0], limit))
-                doc_rows = cur.fetchall()
-        
-        documents = []
-        for row in doc_rows:
-            documents.append({
-                "id": row[0],
-                "title": row[1],
-                "content": row[2][:500] + "..." if len(row[2]) > 500 else row[2],
-                "metadata": row[3],
-                "created_at": str(row[4]),
-                "source_url": row[5]
-            })
-        
+        group_row = rg.get_rag_group(rag_group_name)
+        if not group_row:
+            return json.dumps({"error": "RAG group not found",
+                               "rag_group_name": rag_group_name})
+        rag_group_id = group_row[0]
+
+        doc_rows = db_exec("""
+            SELECT d.id, d.title, d.content, d.metadata, d.created_at
+            FROM rag_documents d
+            WHERE d.rag_group_id = %s
+            ORDER BY d.created_at DESC
+            LIMIT %s
+        """, (rag_group_id, limit)) or []
+
+        documents = [
+            {"id": r[0], "title": r[1],
+             "content": r[2][:500] + "..." if len(r[2]) > 500 else r[2],
+             "metadata": r[3], "created_at": str(r[4])}
+            for r in doc_rows
+        ]
         return json.dumps({
-            "group": {
-                "id": group_row[0],
-                "name": group_row[1],
-                "scope": group_row[2],
-                "description": group_row[3],
-                "doc_count": group_row[4]
-            },
-            "num_documents": len(documents),
-            "documents": documents
+            "group": {"id": group_row[0], "name": group_row[1], "scope": group_row[2],
+                      "description": group_row[4], "doc_count": group_row[6]},
+            "num_documents": len(documents), "documents": documents,
         }, indent=2)
         
     except Exception as e:
@@ -604,7 +472,7 @@ async def mcp_discovery():
 
 
 if __name__ == "__main__":
-    # Run FastMCP server with SSE transport on port 4001
-    logger.info("Starting RAG MCP server on http://0.0.0.0:4001")
-    logger.info("Discovery endpoint: http://0.0.0.0:4001/.well-known/mcp")
-    mcp.run(transport="sse", port=4001, host="0.0.0.0")
+    # Run FastMCP server with SSE transport on port 5000
+    logger.info("Starting RAG MCP server on http://0.0.0.0:5000")
+    logger.info("Discovery endpoint: http://0.0.0.0:5000/.well-known/mcp")
+    mcp.run(transport="sse", port=5000, host="0.0.0.0")
