@@ -21,49 +21,29 @@ AgentKS is an agentic RAG (Retrieval-Augmented Generation) knowledge stack under
 ## 🏗️ Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    CADDY (Reverse Proxy)                    │
-│              80/443 - TLS + Forward Auth                    │
-└────┬─────────────────┬────────────────--────────────────────┘
-     │                 │                
-     │ /webui          │ /admin
-     ↓                 ↓
-┌──────────┐    ┌──────────┐
-│OpenWebUI │    │Admin UI  │
-│  :8080   │    │  :8000   │
-└────┬─────┘    └────┬─────┘
-     │               │               
-     │               |
-     │               │
-     │   ┌───────────▼─────────────────────────┐
-     │   │   Agent Backend (:4000)             │
-     │   │  ┌───────────────────────────────┐  │
-     │   │  │  LangGraph Agent              │  │
-     │   │  │  - agent_skill.py (routing)   │  │
-     │   │  │  - rag_skill.py (retrieval)   │  │
-     │   │  │  - tools_skill.py (tools)     │  │
-     │   │  └───────────────────────────────┘  │
-     │   └─────┬──────────────────┬────────────┘
-     │         │                  │
-     │    ┌────▼─────┐      ┌────-▼──────────┐
-     │    │ RAG MCP  │      │  Tools MCP     │
-     │    │  :5000   │      │   :5010        │
-     │    │          │      │  - arXiv       │
-     │    │PGVector  │      │  - CDS         │
-     │    │Search    │      │  - INSPIRE     │
-     │    └──────────┘      │  - SearXNG     │
-     │                      └────────────────┘
-     │                      ┌────────────────┐
-     │                      │ Hyperparam MCP │
-     │                      │   :5020        │
-     │                      │  - RAG-based   │
-     │                      │  - Optimization│
-     │                      └────────────────┘
-     │
-     │    ┌─────────────┐   ┌──────────┐   ┌──────────┐
-     └────│ Authentik   │   │ Postgres │   │  Ollama  │
-          │  (SSO)      │   │(pgvector)│   │  :11434  │
-          └─────────────┘   └──────────┘   └──────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                     CADDY  :80 / :443                        │
+│         TLS termination + forward_auth (Authentik)           │
+└──┬──────────┬──────────┬──────────┬──────────┬──────────────┘
+   │ /webui   │ /api     │ /admin   │ /rag     │ /hyperparam
+   ↓          ↓          ↓          ↓          ↓
+openwebui  backend    backend   rag_mcp_  hyperparam_
+  :8080      :4000      :8000    service   advisor_mcp
+                                  :5001    service:5020
+               │
+     ┌─────────┴──────────────────┐
+     ↓                            ↓
+ RAG MCP                     Tools MCP
+  :5000                         :5010
+ (SSE retrieval)            - arXiv / CDS
+  │                         - INSPIRE-HEP
+  └─→ PostgreSQL + pgvector  - SearXNG
+      Ollama :11434
+
+┌──────────────────┐  ┌──────────────┐  ┌──────────┐
+│   authentik_     │  │  PostgreSQL  │  │  Ollama  │
+│  server + proxy  │  │  + pgvector  │  │  :11434  │
+└──────────────────┘  └──────────────┘  └──────────┘
 ```
 
 ## 📁 Repository Structure

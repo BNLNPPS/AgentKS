@@ -33,23 +33,22 @@
 
   # /rag protected by forward_auth, strips /rag prefix before forwarding
   # Client: /rag/health -> Backend: /health
-  # Client: /rag/upload -> Backend: /upload
+  # Client: /rag/inject -> Backend: /inject
   handle_path /rag* {
     forward_auth http://authentik_proxy:9000 {
       uri /outpost.goauthentik.io/auth/caddy
       copy_headers X-Authentik-Email X-Authentik-Name X-Authentik-Groups
     }
-    reverse_proxy http://backend:4002
+    reverse_proxy http://rag_mcp_service:5001
   }
 
-  # /hyperparam - Hyperparameter advisor API (port 4003)
-  # AI-powered hyperparameter optimization suggestions
+  # /hyperparam - Hyperparameter advisor MCP service (port 5020)
   handle_path /hyperparam* {
     forward_auth http://authentik_proxy:9000 {
       uri /outpost.goauthentik.io/auth/caddy
       copy_headers X-Authentik-Email X-Authentik-Name X-Authentik-Groups
     }
-    reverse_proxy http://backend:4003
+    reverse_proxy http://hyperparam_advisor_mcp_service:5020
   }
 
   respond 404
