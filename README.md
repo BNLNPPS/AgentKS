@@ -33,11 +33,11 @@ openwebui  backend    backend   rag_mcp_  hyperparam_
                │
      ┌─────────┴──────────────────┐
      ↓                            ↓
- RAG MCP                     Tools MCP
+ RAG REST                     Tools MCP
   :5000                         :5010
  (SSE retrieval)            - arXiv / CDS
   │                         - INSPIRE-HEP
-  └─→ PostgreSQL + pgvector  - SearXNG
+  └─→ PostgreSQL + pgvector - SearXNG
       Ollama :11434
 
 ┌──────────────────┐  ┌──────────────┐  ┌──────────┐
